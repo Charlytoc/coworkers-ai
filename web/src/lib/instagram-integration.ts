@@ -1,12 +1,4 @@
-import { API_BASE_URL } from "@/lib/api-base";
-import { ORGANIZATION_HEADER } from "@/lib/auth-storage";
-
-function authHeaders(token: string, organizationId: string): HeadersInit {
-  return {
-    Authorization: `Bearer ${token}`,
-    [ORGANIZATION_HEADER]: organizationId,
-  };
-}
+import { apiFetch, apiReadJson, throwApiError } from "@/lib/api-request";
 
 export type InstagramOAuthUrlResponse = {
   oauth_url: string;
@@ -27,15 +19,12 @@ export async function getInstagramOAuthUrl(
   organizationId: string,
   workspaceId: number,
 ): Promise<InstagramOAuthUrlResponse> {
-  const response = await fetch(
-    `${API_BASE_URL}/integrations/instagram/workspaces/${workspaceId}/instagram/oauth-url`,
-    { headers: authHeaders(token, organizationId) },
+  const response = await apiFetch(
+    `/integrations/instagram/workspaces/${workspaceId}/instagram/oauth-url`,
+    token,
+    organizationId,
   );
-  if (!response.ok) {
-    const err = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(err?.error ?? `Failed to get Instagram OAuth URL (${response.status})`);
-  }
-  return response.json() as Promise<InstagramOAuthUrlResponse>;
+  return apiReadJson<InstagramOAuthUrlResponse>(response, "Failed to get Instagram OAuth URL");
 }
 
 /**
@@ -47,15 +36,15 @@ export async function disconnectInstagramIntegration(
   workspaceId: number,
   integrationAccountId: string,
 ): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/integrations/instagram/workspaces/${workspaceId}/instagram/${integrationAccountId}`,
+  const response = await apiFetch(
+    `/integrations/instagram/workspaces/${workspaceId}/instagram/${integrationAccountId}`,
+    token,
+    organizationId,
     {
       method: "DELETE",
-      headers: authHeaders(token, organizationId),
     },
   );
   if (!response.ok && response.status !== 204) {
-    const err = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(err?.error ?? `Failed to disconnect Instagram (${response.status})`);
+    await throwApiError(response, "Failed to disconnect Instagram");
   }
 }

@@ -26,7 +26,7 @@ class JobAssignment(TimeStampedModel):
             {"type": "event"|"cron", "on": "<event_slug or cron>", "filter": {...}}
           ],
           "actions": [
-            {"actionable_slug": "telegram.send_message", "integration_account_id": "<uuid>"}
+            {"actionable_slug": "telegram.reply_dm", "integration_account_id": "<uuid>"}
           ],
           "approval_policy": {...},
           "output_schema": {...}   # optional json schema

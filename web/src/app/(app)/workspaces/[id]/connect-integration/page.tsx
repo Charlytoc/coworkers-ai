@@ -1,15 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Anchor,
   Button,
   Container,
-  Divider,
   Loader,
   Center,
   Paper,
@@ -19,52 +18,25 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { useLocalStorage } from "@mantine/hooks";
-import {
-  SELECTED_ORG_ID_KEY,
-  SELECTED_WORKSPACE_ID_KEY,
-  TOKEN_KEY,
-  USER_KEY,
-  readStoredAuth,
-  type AuthUser,
-} from "@/lib/auth-storage";
-import { fetchWorkspaces } from "@/lib/my-workspaces";
+import { useWorkspacePage } from "@/hooks/use-workspace-page";
 import { connectTelegramBot } from "@/lib/telegram-integration";
 import { getInstagramOAuthUrl } from "@/lib/instagram-integration";
 
 export default function ConnectIntegrationPage() {
-  const router = useRouter();
+  const {
+    router,
+    workspaceId,
+    token,
+    orgId,
+    sessionOk,
+    displayUser,
+    workspace,
+    workspacesPending: wsPending,
+    workspaceMismatch,
+    workspaceReady,
+    selectedWorkspaceId,
+  } = useWorkspacePage();
   const queryClient = useQueryClient();
-  const params = useParams();
-  const workspaceIdParam = params.id;
-  const workspaceId =
-    typeof workspaceIdParam === "string"
-      ? Number.parseInt(workspaceIdParam, 10)
-      : Array.isArray(workspaceIdParam)
-        ? Number.parseInt(workspaceIdParam[0] ?? "", 10)
-        : Number.NaN;
-
-  const [sessionOk, setSessionOk] = useState(false);
-  const [user] = useLocalStorage<AuthUser | null>({
-    key: USER_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [token] = useLocalStorage<string | null>({
-    key: TOKEN_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedOrgId] = useLocalStorage<string | null>({
-    key: SELECTED_ORG_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedWorkspaceId] = useLocalStorage<number | null>({
-    key: SELECTED_WORKSPACE_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
 
   const searchParams = useSearchParams();
 
@@ -75,31 +47,6 @@ export default function ConnectIntegrationPage() {
   const [igError, setIgError] = useState<string | null>(
     searchParams.get("instagram_error"),
   );
-
-  useEffect(() => {
-    const { user: stored } = readStoredAuth();
-    if (!stored) {
-      router.replace("/chat");
-      return;
-    }
-    setSessionOk(true);
-  }, [router]);
-
-  const orgId = selectedOrgId != null ? String(selectedOrgId) : null;
-
-  const { data: workspaces, isPending: wsPending } = useQuery({
-    queryKey: ["workspaces", token, orgId],
-    queryFn: () => fetchWorkspaces(token!, orgId!),
-    enabled: Boolean(token) && sessionOk && orgId != null,
-    staleTime: 30_000,
-  });
-
-  const workspace = useMemo(() => {
-    if (!workspaces?.length || Number.isNaN(workspaceId)) {
-      return null;
-    }
-    return workspaces.find((w) => w.id === workspaceId) ?? null;
-  }, [workspaces, workspaceId]);
 
   async function connectInstagram() {
     if (!token || !orgId) return;
@@ -131,10 +78,6 @@ export default function ConnectIntegrationPage() {
       setFormError(err.message);
     },
   });
-
-  const displayUser = user ?? readStoredAuth().user;
-  const workspaceMismatch =
-    selectedWorkspaceId != null && selectedWorkspaceId !== workspaceId && !Number.isNaN(workspaceId);
 
   if (!sessionOk || !displayUser) {
     return (

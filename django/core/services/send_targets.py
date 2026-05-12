@@ -6,12 +6,11 @@ import logging
 import uuid
 from typing import NamedTuple
 
-from core.integrations.actionables import (
-    INSTAGRAM_SEND_MESSAGE,
-    TELEGRAM_SEND_MESSAGE,
+from core.integrations.integration_provider_registry import (
+    dm_provider_config,
+    is_direct_dm_slug,
 )
 from core.models import Conversation, IntegrationAccount, JobAssignment
-from core.schemas.integration_account import SenderApprovalStatus
 from core.schemas.job_assignment import JobAssignmentAction
 from core.schemas.send_target import (
     ResolvedSendTarget,
@@ -29,6 +28,7 @@ class SendTargetSeed(NamedTuple):
     integration_account: IntegrationAccount
     external_thread_id: str
     target_role: str
+    target_kind: str
 
 
 def resolve_send_target(
@@ -36,13 +36,13 @@ def resolve_send_target(
     job: JobAssignment,
     integration_account: IntegrationAccount,
     external_thread_id: str,
+    required_action_slug: str,
     actions: list[JobAssignmentAction] | None = None,
 ) -> SendTargetResolution | None:
     """Return a validated send target if the job may send to this integration + thread.
 
-    Checks (1) job action binds ``telegram.send_message`` / ``instagram.send_message`` to this
-    account, and (2) ``config.senders`` contains ``external_thread_id`` with an allowed
-    ``approval_status`` (Telegram: ``APPROVED`` only; Instagram: not ``PENDING``).
+    ``required_action_slug`` must be the catalog slug that authorizes this send
+    (``*.reply_dm`` or ``*.send_direct_dm`` for the provider).
     """
     tid = (external_thread_id or "").strip()
     if not tid:
@@ -50,18 +50,12 @@ def resolve_send_target(
 
     active_actions = actions if actions is not None else job.get_config().actions
     provider = integration_account.provider
-
-    if provider == IntegrationAccount.Provider.TELEGRAM:
-        slug = TELEGRAM_SEND_MESSAGE.slug
-        stype = SendTargetProvider.TELEGRAM
-    elif provider == IntegrationAccount.Provider.INSTAGRAM:
-        slug = INSTAGRAM_SEND_MESSAGE.slug
-        stype = SendTargetProvider.INSTAGRAM
-    else:
+    cfg = dm_provider_config(provider)
+    if cfg is None:
         return None
 
     if not any(
-        a.actionable_slug == slug and a.integration_account_id == integration_account.id
+        a.actionable_slug == required_action_slug and a.integration_account_id == integration_account.id
         for a in active_actions
     ):
         return None
@@ -70,17 +64,79 @@ def resolve_send_target(
     if sender is None:
         return None
 
-    if provider == IntegrationAccount.Provider.TELEGRAM:
-        if sender.approval_status != SenderApprovalStatus.APPROVED:
+    if required_action_slug == cfg.reply_dm_slug:
+        if not cfg.reply_sender_allowed(sender.approval_status):
             return None
-    elif sender.approval_status == SenderApprovalStatus.PENDING:
+    elif required_action_slug == cfg.direct_dm_slug:
+        if not cfg.direct_sender_allowed(sender.approval_status):
+            return None
+    else:
         return None
 
     return SendTargetResolution(
-        provider=stype,
+        provider=cfg.send_target_provider,
         integration_account_id=integration_account.id,
         external_thread_id=tid,
     )
+
+
+def _reply_seeds_from_conversation(
+    conversation: Conversation | None,
+) -> list[SendTargetSeed]:
+    if (
+        conversation is None
+        or conversation.origin != Conversation.Origin.INTEGRATION
+        or conversation.integration_account_id is None
+    ):
+        return []
+    account = conversation.integration_account
+    tid = (conversation.get_config().external_thread_id or "").strip()
+    if not tid or account.provider not in (
+        IntegrationAccount.Provider.TELEGRAM,
+        IntegrationAccount.Provider.INSTAGRAM,
+    ):
+        return []
+    return [
+        SendTargetSeed(
+            integration_account=account,
+            external_thread_id=tid,
+            target_role="This is the user you are interacting with right now.",
+            target_kind="reply",
+        )
+    ]
+
+
+def _direct_seeds_from_actions(
+    *,
+    workspace_id: int,
+    actions: list[JobAssignmentAction],
+) -> list[SendTargetSeed]:
+    out: list[SendTargetSeed] = []
+    for act in actions:
+        if not is_direct_dm_slug(act.actionable_slug):
+            continue
+        if act.integration_account_id is None:
+            continue
+        account = IntegrationAccount.objects.filter(
+            id=act.integration_account_id, workspace_id=workspace_id
+        ).first()
+        if account is None:
+            continue
+        for row in act.direct_dm_recipients:
+            tid = (row.external_thread_id or "").strip()
+            if not tid:
+                continue
+            label = (row.label or "").strip()
+            role = f"Direct DM recipient: {label}" if label else "Direct DM recipient (configured thread)"
+            out.append(
+                SendTargetSeed(
+                    integration_account=account,
+                    external_thread_id=tid,
+                    target_role=role,
+                    target_kind="direct",
+                )
+            )
+    return out
 
 
 def collect_resolved_send_targets(
@@ -90,7 +146,6 @@ def collect_resolved_send_targets(
     actions: list[JobAssignmentAction] | None = None,
 ) -> list[ResolvedSendTarget]:
     """Build the indexed target list for this run from explicit seeds (not a full sender scan)."""
-    seeds: list[SendTargetSeed] = []
     active_actions = actions if actions is not None else job.get_config().actions
     if conversation is not None and conversation.origin == Conversation.Origin.WEB:
         web_user_id = conversation.get_config().web_user_id
@@ -101,44 +156,43 @@ def collect_resolved_send_targets(
                     target_role="This is the web chat user you are interacting with right now.",
                     provider=SendTargetProvider.WEB_CHAT,
                     web_user_id=web_user_id,
+                    target_kind=None,
                 )
             ]
 
-    if (
-        conversation is not None
-        and conversation.origin == Conversation.Origin.INTEGRATION
-        and conversation.integration_account_id is not None
-    ):
-        account = conversation.integration_account
-        tid = (conversation.get_config().external_thread_id or "").strip()
-        if tid and account.provider in (
-            IntegrationAccount.Provider.TELEGRAM,
-            IntegrationAccount.Provider.INSTAGRAM,
-        ):
-            seeds.append(
-                SendTargetSeed(
-                    integration_account=account,
-                    external_thread_id=tid,
-                    target_role="This is the user you are interacting with right now.",
-                )
-            )
+    seeds: list[SendTargetSeed] = []
+    seeds.extend(_reply_seeds_from_conversation(conversation))
+    seen: set[tuple[uuid.UUID, str]] = {(s.integration_account.id, s.external_thread_id) for s in seeds}
+    for s in _direct_seeds_from_actions(workspace_id=job.workspace_id, actions=active_actions):
+        key = (s.integration_account.id, s.external_thread_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        seeds.append(s)
 
     out: list[ResolvedSendTarget] = []
     for seed in seeds:
+        cfg = dm_provider_config(seed.integration_account.provider)
+        if cfg is None:
+            continue
+        slug = cfg.reply_dm_slug if seed.target_kind == "reply" else cfg.direct_dm_slug
         res = resolve_send_target(
             job=job,
             integration_account=seed.integration_account,
             external_thread_id=seed.external_thread_id,
+            required_action_slug=slug,
             actions=active_actions,
         )
         if res is None:
             logger.info(
-                "send_targets skip_seed job_id=%s account_id=%s thread_prefix=%s",
+                "send_targets skip_seed job_id=%s account_id=%s thread_prefix=%s kind=%s",
                 job.id,
                 seed.integration_account.id,
                 seed.external_thread_id[:24],
+                seed.target_kind,
             )
             continue
+        kind: str | None = seed.target_kind if seed.target_kind in ("reply", "direct") else None
         out.append(
             ResolvedSendTarget(
                 target_index=len(out),
@@ -146,6 +200,11 @@ def collect_resolved_send_targets(
                 provider=res.provider,
                 integration_account_id=res.integration_account_id,
                 external_thread_id=res.external_thread_id,
+                target_kind=kind,
             )
         )
     return out
+
+
+def reindex_send_targets(targets: list[ResolvedSendTarget]) -> list[ResolvedSendTarget]:
+    return [t.model_copy(update={"target_index": i}) for i, t in enumerate(targets)]

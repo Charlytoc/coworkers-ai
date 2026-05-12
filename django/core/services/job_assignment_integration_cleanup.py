@@ -32,9 +32,12 @@ def _sole_integration_account_in_accounts(cfg: JobAssignmentConfig, account_id: 
 def _strip_integration_account(cfg: JobAssignmentConfig, account_id: uuid.UUID) -> JobAssignmentConfig:
     new_accounts = [a for a in cfg.accounts if a.id != account_id]
     new_actions = [
-        JobAssignmentAction(
-            actionable_slug=a.actionable_slug,
-            integration_account_id=None if a.integration_account_id == account_id else a.integration_account_id,
+        a.model_copy(
+            update={
+                "integration_account_id": None
+                if a.integration_account_id == account_id
+                else a.integration_account_id
+            }
         )
         for a in cfg.actions
     ]

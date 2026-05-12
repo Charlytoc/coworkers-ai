@@ -18,18 +18,45 @@ class Actionable:
     description: str
 
 
-TELEGRAM_SEND_MESSAGE = Actionable(
-    slug="telegram.send_message",
+TELEGRAM_REPLY_DM = Actionable(
+    slug="telegram.reply_dm",
     provider="telegram",
-    name="Send Telegram message",
-    description="Send a text message from a connected Telegram bot to a chat id the agent already knows.",
+    name="Reply to Telegram DM",
+    description=(
+        "Send a text reply in the active Telegram private chat thread for this run "
+        "(same thread as the inbound message or the conversation bound to this task)."
+    ),
 )
 
-INSTAGRAM_SEND_MESSAGE = Actionable(
-    slug="instagram.send_message",
+INSTAGRAM_REPLY_DM = Actionable(
+    slug="instagram.reply_dm",
     provider="instagram",
-    name="Send Instagram DM",
-    description="Send a text direct message from a connected Instagram Business account to a conversation thread the agent already knows.",
+    name="Reply to Instagram DM",
+    description=(
+        "Send a text reply in the active Instagram DM thread for this run "
+        "(same thread as the inbound message or the conversation bound to this task)."
+    ),
+)
+
+TELEGRAM_SEND_DIRECT_DM = Actionable(
+    slug="telegram.send_direct_dm",
+    provider="telegram",
+    name="Send Telegram DM (proactive)",
+    description=(
+        "Send a Telegram message to one of the thread ids listed on this action's "
+        "`direct_dm_recipients`. Bots can only message users who have started a chat with the bot; "
+        "each recipient must pass sender approval rules."
+    ),
+)
+
+INSTAGRAM_SEND_DIRECT_DM = Actionable(
+    slug="instagram.send_direct_dm",
+    provider="instagram",
+    name="Send Instagram DM (proactive)",
+    description=(
+        "Send an Instagram DM to one of the conversation thread ids listed on this action's "
+        "`direct_dm_recipients`. Instagram messaging windows and approval rules still apply."
+    ),
 )
 
 INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE = Actionable(
@@ -97,8 +124,10 @@ ARTIFACTS_CREATE_IMAGE = Actionable(
 ACTIONABLES: dict[str, Actionable] = {
     a.slug: a
     for a in (
-        TELEGRAM_SEND_MESSAGE,
-        INSTAGRAM_SEND_MESSAGE,
+        TELEGRAM_REPLY_DM,
+        INSTAGRAM_REPLY_DM,
+        TELEGRAM_SEND_DIRECT_DM,
+        INSTAGRAM_SEND_DIRECT_DM,
         INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE,
         TASKS_SCHEDULE_ONE_OFF,
         TASKS_CREATE_RECURRING_JOB,

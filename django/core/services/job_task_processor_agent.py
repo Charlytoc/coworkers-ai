@@ -11,7 +11,7 @@ from core.agent.tools.create_recurring_job import make_create_recurring_job_tool
 from core.agent.tools.create_text_artifact import make_create_text_artifact_tool
 from core.agent.tools.publish_external_resource import make_publish_external_resource_tool
 from core.agent.tools.schedule_one_off_task import make_schedule_one_off_task_tool
-from core.agent.tools.send_message import make_send_message_tool
+from core.agent.tools.send_message import make_send_direct_message_tool, make_send_message_tool
 from core.integrations.actionables import (
     ARTIFACTS_CALL_CREATOR,
     ARTIFACTS_CREATE_IMAGE,
@@ -20,11 +20,14 @@ from core.integrations.actionables import (
     TASKS_CREATE_RECURRING_JOB,
     TASKS_SCHEDULE_ONE_OFF,
 )
-from core.integrations.event_types import INSTAGRAM_DM_MESSAGE, TELEGRAM_PRIVATE_MESSAGE
+from core.integrations.integration_provider_registry import (
+    dm_integration_channel,
+    inbound_dm_definition,
+)
 from core.models import Conversation, CyberIdentity, IntegrationAccount, JobAssignment, TaskExecution
 from core.schemas.channel import Channel, InstagramDmChannel, TelegramPrivateChannel, WebChatChannel
 from core.schemas.job_assignment import JobAssignmentAction, JobAssignmentEventTrigger
-from core.services.send_targets import collect_resolved_send_targets
+from core.services.send_targets import collect_resolved_send_targets, reindex_send_targets
 
 
 class JobTaskProcessorAgent:
@@ -42,7 +45,7 @@ class JobTaskProcessorAgent:
 
         The conversation carries the integration account and external thread id when
         ``origin == integration``; :func:`collect_resolved_send_targets` turns that into indexed
-        rows for the unified ``send_message`` tool.
+        rows for ``send_message`` (reply + web) and ``send_direct_message`` (proactive DMs).
         """
         channel = _channel_for_conversation(conversation)
         return JobTaskProcessorAgent._build_tools_from_actions(
@@ -78,10 +81,21 @@ class JobTaskProcessorAgent:
             conversation=conversation,
             actions=actions,
         )
-        if dm_targets:
+        reply_like = [t for t in dm_targets if t.target_kind != "direct"]
+        direct_only = [t for t in dm_targets if t.target_kind == "direct"]
+        if reply_like:
             _add(
                 make_send_message_tool(
-                    targets=dm_targets,
+                    targets=reindex_send_targets(reply_like),
+                    conversation_for_append=conversation,
+                )
+            )
+        identity = JobTaskProcessorAgent.primary_identity_for_job(job)
+        if direct_only and identity is not None:
+            _add(
+                make_send_direct_message_tool(
+                    targets=reindex_send_targets(direct_only),
+                    cyber_identity=identity,
                     conversation_for_append=conversation,
                 )
             )
@@ -139,11 +153,11 @@ class JobTaskProcessorAgent:
         )
 
     @staticmethod
-    def find_matching_jobs_for_telegram_private_message(
-        account: IntegrationAccount,
-    ) -> list[JobAssignment]:
-        """Enabled jobs in the workspace that listen for private Telegram messages and include this bot in actions."""
-        event_slug = TELEGRAM_PRIVATE_MESSAGE.slug
+    def _find_matching_jobs_for_inbound_dm(account: IntegrationAccount) -> list[JobAssignment]:
+        spec = inbound_dm_definition(account.provider)
+        if spec is None:
+            return []
+        event_slug = spec.inbound_event_slug
         out: list[JobAssignment] = []
         qs = JobAssignment.objects.filter(workspace=account.workspace, enabled=True).order_by("role_name")
         for job in qs:
@@ -156,10 +170,22 @@ class JobTaskProcessorAgent:
             )
             if not listens:
                 continue
-            if not any(a.integration_account_id == account.id for a in cfg_model.actions):
+            if not any(
+                a.integration_account_id == account.id and a.actionable_slug == spec.reply_dm_slug
+                for a in cfg_model.actions
+            ):
                 continue
             out.append(job)
         return out
+
+    @staticmethod
+    def find_matching_jobs_for_telegram_private_message(
+        account: IntegrationAccount,
+    ) -> list[JobAssignment]:
+        """Enabled jobs in the workspace that listen for private Telegram messages and include this bot in actions."""
+        if account.provider != IntegrationAccount.Provider.TELEGRAM:
+            return []
+        return JobTaskProcessorAgent._find_matching_jobs_for_inbound_dm(account)
 
     @staticmethod
     def first_runnable_job_for_telegram_private_message(
@@ -174,23 +200,9 @@ class JobTaskProcessorAgent:
         account: IntegrationAccount,
     ) -> list[JobAssignment]:
         """Enabled jobs in the workspace that listen for Instagram DMs and include this account in actions."""
-        event_slug = INSTAGRAM_DM_MESSAGE.slug
-        out: list[JobAssignment] = []
-        qs = JobAssignment.objects.filter(workspace=account.workspace, enabled=True).order_by("role_name")
-        for job in qs:
-            cfg_model = job.get_config()
-            if not cfg_model.identities:
-                continue
-            listens = any(
-                isinstance(tr, JobAssignmentEventTrigger) and tr.on == event_slug
-                for tr in cfg_model.triggers
-            )
-            if not listens:
-                continue
-            if not any(a.integration_account_id == account.id for a in cfg_model.actions):
-                continue
-            out.append(job)
-        return out
+        if account.provider != IntegrationAccount.Provider.INSTAGRAM:
+            return []
+        return JobTaskProcessorAgent._find_matching_jobs_for_inbound_dm(account)
 
     @staticmethod
     def first_runnable_job_for_instagram_dm(
@@ -212,19 +224,7 @@ class JobTaskProcessorAgent:
         account: IntegrationAccount,
         external_thread_id: str,
     ) -> TelegramPrivateChannel | InstagramDmChannel | None:
-        if account.provider == IntegrationAccount.Provider.TELEGRAM:
-            return TelegramPrivateChannel(
-                type="telegram_private_chat",
-                integration_account_id=account.id,
-                chat_id=external_thread_id,
-            )
-        if account.provider == IntegrationAccount.Provider.INSTAGRAM:
-            return InstagramDmChannel(
-                type="instagram_dm",
-                integration_account_id=account.id,
-                recipient_igsid=external_thread_id,
-            )
-        return None
+        return dm_integration_channel(account, external_thread_id)
 
     @staticmethod
     def model_for_job(job: JobAssignment) -> str | None:
@@ -244,15 +244,16 @@ class JobTaskProcessorAgent:
         return None
 
     @staticmethod
-    def _user_facing_send_tool_name(
-        conversation: Conversation | None,
-        dm_targets: list,
-    ) -> str | None:
-        """Name of the primary user-visible send tool for this run (matches tool registration)."""
-        if conversation is None:
+    def _user_facing_send_tool_name(dm_targets: list) -> str | None:
+        """Primary user-visible send tool for this run (matches tool registration)."""
+        if not dm_targets:
             return None
-        if dm_targets:
+        has_reply_like = any(getattr(t, "target_kind", None) != "direct" for t in dm_targets)
+        has_direct = any(getattr(t, "target_kind", None) == "direct" for t in dm_targets)
+        if has_reply_like:
             return "send_message"
+        if has_direct:
+            return "send_direct_message"
         return None
 
     @staticmethod
@@ -303,29 +304,60 @@ class JobTaskProcessorAgent:
             actions=actions,
         )
         if dm_targets:
-            pub_lines = "\n".join(
-                f"- {p.target_index}: ({p.target_role}) [{p.integration_type.value}]"
-                for p in (t.to_public() for t in dm_targets)
-            )
-            parts.append(
-                "**Outbound send targets** (use `send_message` with `target_index` plus `message`):\n"
-                f"{pub_lines}\n"
-                "Do not guess thread or account ids; only the indices above are valid for this run."
-            )
+            reply_like = [t for t in dm_targets if t.target_kind != "direct"]
+            direct_only = [t for t in dm_targets if t.target_kind == "direct"]
+            if reply_like:
+                ri = reindex_send_targets(reply_like)
+                pub_lines = "\n".join(
+                    f"- {p.target_index}: ({p.target_role}) [{p.integration_type.value}]"
+                    for p in (t.to_public() for t in ri)
+                )
+                parts.append(
+                    "**Outbound reply / web targets** (use `send_message` with `target_index` plus `message`):\n"
+                    f"{pub_lines}\n"
+                    "Do not guess thread or account ids; only the indices above are valid for `send_message`."
+                )
+            if direct_only:
+                di = reindex_send_targets(direct_only)
+                pub_direct = "\n".join(
+                    f"- {p.target_index}: ({p.target_role}) [{p.integration_type.value}]"
+                    for p in (t.to_public() for t in di)
+                )
+                parts.append(
+                    "**Outbound direct DM targets** (use `send_direct_message` with `target_index` plus `message`):\n"
+                    f"{pub_direct}\n"
+                    "These are allowlisted proactive destinations; only the indices above are valid for "
+                    "`send_direct_message`."
+                )
 
         capability_prompt = JobTaskProcessorAgent._capability_prompt(actions)
         if capability_prompt:
             parts.append(capability_prompt)
 
-        tool_name = JobTaskProcessorAgent._user_facing_send_tool_name(conversation, dm_targets)
+        tool_name = JobTaskProcessorAgent._user_facing_send_tool_name(dm_targets)
         if tool_name:
-            parts.append(
-                "Anything the end user must read or hear must be sent through the **`send_message`** "
-                "tool using the correct **`target_index`** from the list above. Plain assistant text "
-                "without that tool is not delivered to the user on this channel. If older job "
-                "instructions refer to `send_chat_message`, treat that as obsolete: the current "
-                "tool name is `send_message`."
-            )
+            has_direct = any(getattr(t, "target_kind", None) == "direct" for t in dm_targets)
+            has_reply_like = any(getattr(t, "target_kind", None) != "direct" for t in dm_targets)
+            if has_reply_like and has_direct:
+                parts.append(
+                    "User-visible text in the **active inbound or web thread** must go through **`send_message`** "
+                    "with the correct `target_index` from the reply/web list. Proactive messages to **direct** "
+                    "targets must use **`send_direct_message`** with the correct index from the direct list. "
+                    "Plain assistant text alone is not delivered on integration channels."
+                )
+            elif has_direct:
+                parts.append(
+                    "User-visible text to the configured direct targets must be sent through **`send_direct_message`** "
+                    "with the correct `target_index`. Plain assistant text alone is not delivered."
+                )
+            else:
+                parts.append(
+                    "Anything the end user must read or hear must be sent through the **`send_message`** "
+                    "tool using the correct **`target_index`** from the list above. Plain assistant text "
+                    "without that tool is not delivered to the user on this channel. If older job "
+                    "instructions refer to `send_chat_message`, treat that as obsolete: the current "
+                    "tool name is `send_message`."
+                )
         else:
             parts.append(
                 "Use the send-message tool attached to this run for user-visible replies; plain assistant "
@@ -356,18 +388,8 @@ def _channel_for_conversation(conversation: Conversation) -> Channel | None:
     if not cfg.external_thread_id:
         return None
 
-    if account.provider == IntegrationAccount.Provider.TELEGRAM:
-        return TelegramPrivateChannel(
-            type="telegram_private_chat",
-            integration_account_id=account.id,
-            chat_id=cfg.external_thread_id,
-        )
-
-    if account.provider == IntegrationAccount.Provider.INSTAGRAM:
-        return InstagramDmChannel(
-            type="instagram_dm",
-            integration_account_id=account.id,
-            recipient_igsid=cfg.external_thread_id,
-        )
+    ch = dm_integration_channel(account, cfg.external_thread_id)
+    if ch is not None:
+        return ch
 
     return None

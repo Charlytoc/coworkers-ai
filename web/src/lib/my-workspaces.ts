@@ -1,24 +1,11 @@
-import { API_BASE_URL } from "@/lib/api-base";
 import type { components } from "@/lib/api/schema";
-import { ORGANIZATION_HEADER } from "@/lib/auth-storage";
+import { apiFetch, apiReadJson } from "@/lib/api-request";
 
 export type WorkspaceResponse = components["schemas"]["WorkspaceResponse"];
 
-function authHeaders(token: string, organizationId: string): HeadersInit {
-  return {
-    Authorization: `Bearer ${token}`,
-    [ORGANIZATION_HEADER]: organizationId,
-  };
-}
-
 export async function fetchWorkspaces(token: string, organizationId: string): Promise<WorkspaceResponse[]> {
-  const response = await fetch(`${API_BASE_URL}/workspaces/`, {
-    headers: authHeaders(token, organizationId),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to load workspaces (${response.status})`);
-  }
-  return response.json() as Promise<WorkspaceResponse[]>;
+  const response = await apiFetch("/workspaces/", token, organizationId);
+  return apiReadJson<WorkspaceResponse[]>(response, "Failed to load workspaces");
 }
 
 export async function createWorkspace(
@@ -26,17 +13,22 @@ export async function createWorkspace(
   organizationId: string,
   name: string,
 ): Promise<WorkspaceResponse> {
-  const response = await fetch(`${API_BASE_URL}/workspaces/`, {
+  const response = await apiFetch("/workspaces/", token, organizationId, {
     method: "POST",
-    headers: {
-      ...authHeaders(token, organizationId),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ name }),
+    jsonBody: { name },
   });
-  if (!response.ok) {
-    const err = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(err?.error ?? `Failed to create workspace (${response.status})`);
-  }
-  return response.json() as Promise<WorkspaceResponse>;
+  return apiReadJson<WorkspaceResponse>(response, "Failed to create workspace");
+}
+
+export async function patchWorkspace(
+  token: string,
+  organizationId: string,
+  workspaceId: number,
+  name: string,
+): Promise<WorkspaceResponse> {
+  const response = await apiFetch(`/workspaces/${workspaceId}/`, token, organizationId, {
+    method: "PATCH",
+    jsonBody: { name },
+  });
+  return apiReadJson<WorkspaceResponse>(response, "Failed to update workspace");
 }

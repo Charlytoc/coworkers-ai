@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ActionIcon,
@@ -23,16 +22,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { useLocalStorage } from "@mantine/hooks";
-import {
-  SELECTED_ORG_ID_KEY,
-  SELECTED_WORKSPACE_ID_KEY,
-  TOKEN_KEY,
-  USER_KEY,
-  readStoredAuth,
-  type AuthUser,
-} from "@/lib/auth-storage";
-import { fetchWorkspaces } from "@/lib/my-workspaces";
+import { useWorkspacePage } from "@/hooks/use-workspace-page";
 import { fetchCyberIdentities } from "@/lib/workspace-cyber-identities";
 import { fetchWorkspaceIntegrations } from "@/lib/workspace-integrations";
 import { fetchJobAssignments } from "@/lib/workspace-job-assignments";
@@ -49,70 +39,28 @@ import {
   type WorkspaceArtifact,
 } from "@/lib/workspace-artifacts";
 
-function parseWorkspaceId(value: string | string[] | undefined): number {
-  const raw = Array.isArray(value) ? value[0] : value;
-  return Number.parseInt(raw ?? "", 10);
-}
-
 const ARTIFACT_CARD_PREVIEW_PX = 280;
 
 export default function WorkspaceArtifactsPage() {
   const queryClient = useQueryClient();
-  const router = useRouter();
-  const params = useParams();
-  const workspaceId = parseWorkspaceId(params.id);
-
-  const [user] = useLocalStorage<AuthUser | null>({
-    key: USER_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [token] = useLocalStorage<string | null>({
-    key: TOKEN_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedOrgId] = useLocalStorage<string | null>({
-    key: SELECTED_ORG_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedWorkspaceId] = useLocalStorage<number | null>({
-    key: SELECTED_WORKSPACE_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
+  const {
+    workspaceId,
+    token,
+    orgId,
+    sessionOk,
+    displayUser,
+    workspace,
+    workspacesPending: wsPending,
+    workspaceMismatch,
+    workspaceReady: baseEnabled,
+    selectedWorkspaceId,
+  } = useWorkspacePage();
 
   const [identityId, setIdentityId] = useState<string | null>(null);
   const [jobAssignmentId, setJobAssignmentId] = useState<string | null>(null);
   const [integrationAccountId, setIntegrationAccountId] = useState<string | null>(null);
   const [kind, setKind] = useState<ArtifactKind | null>(null);
   const [artifactToDelete, setArtifactToDelete] = useState<WorkspaceArtifact | null>(null);
-
-  useEffect(() => {
-    const { user: stored } = readStoredAuth();
-    if (!stored) {
-      router.replace("/chat");
-    }
-  }, [router]);
-
-  const orgId = selectedOrgId != null ? String(selectedOrgId) : null;
-  const displayUser = user ?? readStoredAuth().user;
-
-  const { data: workspaces, isPending: wsPending } = useQuery({
-    queryKey: ["workspaces", token, orgId],
-    queryFn: () => fetchWorkspaces(token!, orgId!),
-    enabled: Boolean(token) && Boolean(displayUser) && orgId != null,
-    staleTime: 30_000,
-  });
-
-  const workspace = useMemo(() => {
-    if (!workspaces?.length || Number.isNaN(workspaceId)) return null;
-    return workspaces.find((w) => w.id === workspaceId) ?? null;
-  }, [workspaces, workspaceId]);
-
-  const baseEnabled =
-    Boolean(token) && Boolean(displayUser) && orgId != null && !Number.isNaN(workspaceId) && Boolean(workspace);
 
   const { data: identities } = useQuery({
     queryKey: ["cyber-identities", token, orgId, workspaceId],
@@ -185,9 +133,6 @@ export default function WorkspaceArtifactsPage() {
     },
   });
 
-  const workspaceMismatch =
-    selectedWorkspaceId != null && selectedWorkspaceId !== workspaceId && !Number.isNaN(workspaceId);
-
   const identityOptions = useMemo(
     () =>
       (identities ?? []).map((row) => ({
@@ -215,7 +160,7 @@ export default function WorkspaceArtifactsPage() {
     [integrations],
   );
 
-  if (!displayUser) {
+  if (!sessionOk || !displayUser) {
     return (
       <Center style={{ flex: 1 }}>
         <Loader size="sm" />

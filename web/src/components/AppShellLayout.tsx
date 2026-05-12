@@ -47,7 +47,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
     defaultValue: null,
     getInitialValueInEffect: true,
   });
-  const [, , removeSelectedWorkspace] = useLocalStorage<number | null>({
+  const [selectedWorkspaceId, , removeSelectedWorkspace] = useLocalStorage<number | null>({
     key: SELECTED_WORKSPACE_ID_KEY,
     defaultValue: null,
     getInitialValueInEffect: true,
@@ -98,6 +98,17 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
     removeSelectedOrg();
     removeSelectedWorkspace();
     router.push("/");
+  }
+
+  const workspaceNavPrefix =
+    selectedWorkspaceId != null && !Number.isNaN(selectedWorkspaceId)
+      ? `/workspaces/${selectedWorkspaceId}`
+      : null;
+
+  function workspaceSectionActive(segment: string): boolean {
+    if (!workspaceNavPrefix || !pathname) return false;
+    const base = `${workspaceNavPrefix}/${segment}`;
+    return pathname === base || pathname.startsWith(`${base}/`);
   }
 
   return (
@@ -171,6 +182,13 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
           active={pathname === "/chat"}
           onClick={() => closeMobileNav()}
         />
+        <NavLink
+          component={Link}
+          href="/settings"
+          label="Settings"
+          active={pathname === "/settings" || pathname?.startsWith("/settings/")}
+          onClick={() => closeMobileNav()}
+        />
         <Text size="xs" fw={700} c="dimmed" tt="uppercase" mt="md" mb={4} px="xs">
           Workspace
         </Text>
@@ -181,13 +199,51 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
           component={Link}
           href="/workspace"
           label="Workspace home"
-          active={
-            pathname === "/workspace" ||
-            pathname?.startsWith("/workspace/") ||
-            pathname?.startsWith("/workspaces/")
-          }
+          active={pathname === "/workspace" || Boolean(pathname?.startsWith("/workspace/"))}
           onClick={() => closeMobileNav()}
         />
+        {workspaceNavPrefix ? (
+          <>
+            <Text size="xs" fw={700} c="dimmed" tt="uppercase" mt="md" mb={4} px="xs">
+              In this workspace
+            </Text>
+            <NavLink
+              component={Link}
+              href={`${workspaceNavPrefix}/cyber-identities`}
+              label="Cyber identities"
+              active={workspaceSectionActive("cyber-identities")}
+              onClick={() => closeMobileNav()}
+            />
+            <NavLink
+              component={Link}
+              href={`${workspaceNavPrefix}/job-assignments`}
+              label="Jobs"
+              active={workspaceSectionActive("job-assignments")}
+              onClick={() => closeMobileNav()}
+            />
+            <NavLink
+              component={Link}
+              href={`${workspaceNavPrefix}/integrations`}
+              label="Accounts"
+              active={workspaceSectionActive("integrations")}
+              onClick={() => closeMobileNav()}
+            />
+            <NavLink
+              component={Link}
+              href={`${workspaceNavPrefix}/connect-integration`}
+              label="Connect account"
+              active={workspaceSectionActive("connect-integration")}
+              onClick={() => closeMobileNav()}
+            />
+            <NavLink
+              component={Link}
+              href={`${workspaceNavPrefix}/artifacts`}
+              label="Artifacts"
+              active={workspaceSectionActive("artifacts")}
+              onClick={() => closeMobileNav()}
+            />
+          </>
+        ) : null}
       </AppShell.Navbar>
 
       <AppShell.Main

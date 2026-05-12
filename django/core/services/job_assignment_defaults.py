@@ -8,10 +8,10 @@ from django.db import transaction
 
 from core.integrations.actionables import (
     INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE,
-    INSTAGRAM_SEND_MESSAGE,
+    INSTAGRAM_REPLY_DM,
     TASKS_CREATE_RECURRING_JOB,
     TASKS_SCHEDULE_ONE_OFF,
-    TELEGRAM_SEND_MESSAGE,
+    TELEGRAM_REPLY_DM,
 )
 from core.integrations.event_types import INSTAGRAM_DM_MESSAGE, TELEGRAM_PRIVATE_MESSAGE
 from core.models import CyberIdentity, IntegrationAccount, JobAssignment
@@ -106,7 +106,7 @@ def _ensure_default_identity(*, workspace, user) -> CyberIdentity:
 
 
 def _has_existing_job_for_telegram_account(account: IntegrationAccount) -> bool:
-    """True if any enabled job already targets this Telegram account with send_message."""
+    """True if any enabled job already targets this Telegram account with ``telegram.reply_dm``."""
     for job in JobAssignment.objects.filter(workspace=account.workspace).iterator():
         try:
             cfg = job.get_config()
@@ -114,7 +114,7 @@ def _has_existing_job_for_telegram_account(account: IntegrationAccount) -> bool:
             continue
         for act in cfg.actions:
             if (
-                act.actionable_slug == TELEGRAM_SEND_MESSAGE.slug
+                act.actionable_slug == TELEGRAM_REPLY_DM.slug
                 and act.integration_account_id == account.id
             ):
                 return True
@@ -128,7 +128,7 @@ def ensure_default_job_assignment_for_telegram(
 
     No-op if:
     - ``account`` is not a Telegram account.
-    - A job already targets this account with ``telegram.send_message``.
+    - A job already targets this account with ``telegram.reply_dm``.
 
     Returns the created job (or ``None`` when skipped).
     """
@@ -160,7 +160,7 @@ def ensure_default_job_assignment_for_telegram(
         ],
         actions=[
             JobAssignmentAction(
-                actionable_slug=TELEGRAM_SEND_MESSAGE.slug,
+                actionable_slug=TELEGRAM_REPLY_DM.slug,
                 integration_account_id=account.id,
             ),
             JobAssignmentAction(
@@ -241,7 +241,7 @@ def _has_existing_job_for_instagram_account(account: IntegrationAccount) -> bool
             continue
         for act in cfg.actions:
             if (
-                act.actionable_slug == INSTAGRAM_SEND_MESSAGE.slug
+                act.actionable_slug == INSTAGRAM_REPLY_DM.slug
                 and act.integration_account_id == account.id
             ):
                 return True
@@ -255,7 +255,7 @@ def ensure_default_job_assignment_for_instagram(
 
     No-op if:
     - ``account`` is not an Instagram account.
-    - A job already targets this account with ``instagram.send_message``.
+    - A job already targets this account with ``instagram.reply_dm``.
     """
     if account.provider != IntegrationAccount.Provider.INSTAGRAM:
         logger.info(
@@ -295,7 +295,7 @@ def ensure_default_job_assignment_for_instagram(
         ],
         actions=[
             JobAssignmentAction(
-                actionable_slug=INSTAGRAM_SEND_MESSAGE.slug,
+                actionable_slug=INSTAGRAM_REPLY_DM.slug,
                 integration_account_id=account.id,
             ),
             JobAssignmentAction(

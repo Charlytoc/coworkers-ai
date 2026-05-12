@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -20,14 +19,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { useLocalStorage } from "@mantine/hooks";
-import {
-  SELECTED_ORG_ID_KEY,
-  TOKEN_KEY,
-  USER_KEY,
-  readStoredAuth,
-  type AuthUser,
-} from "@/lib/auth-storage";
+import { useWorkspacePage } from "@/hooks/use-workspace-page";
 import {
   fetchIntegrationConversations,
   fetchIntegrationTaskExecutions,
@@ -74,17 +66,17 @@ function statusBadge(status: string) {
 }
 
 export default function IntegrationAccountDetailPage() {
-  const router = useRouter();
-  const params = useParams();
-  const workspaceIdParam = params.id;
-  const accountIdParam = params.accountId;
+  const {
+    params,
+    workspaceId,
+    token,
+    orgId,
+    sessionOk,
+    displayUser,
+    workspaceReady,
+  } = useWorkspacePage();
 
-  const workspaceId =
-    typeof workspaceIdParam === "string"
-      ? Number.parseInt(workspaceIdParam, 10)
-      : Array.isArray(workspaceIdParam)
-        ? Number.parseInt(workspaceIdParam[0] ?? "", 10)
-        : Number.NaN;
+  const accountIdParam = params.accountId;
 
   const accountId =
     typeof accountIdParam === "string"
@@ -93,35 +85,7 @@ export default function IntegrationAccountDetailPage() {
         ? accountIdParam[0] ?? ""
         : "";
 
-  const [sessionOk, setSessionOk] = useState(false);
-  const [user] = useLocalStorage<AuthUser | null>({
-    key: USER_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [token] = useLocalStorage<string | null>({
-    key: TOKEN_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedOrgId] = useLocalStorage<string | null>({
-    key: SELECTED_ORG_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-
-  useEffect(() => {
-    const { user: stored } = readStoredAuth();
-    if (!stored) {
-      router.replace("/chat");
-      return;
-    }
-    setSessionOk(true);
-  }, [router]);
-
-  const orgId = selectedOrgId != null ? String(selectedOrgId) : null;
-  const ready =
-    Boolean(token) && sessionOk && orgId != null && !Number.isNaN(workspaceId) && Boolean(accountId);
+  const ready = workspaceReady && Boolean(accountId);
 
   const {
     data: account,
@@ -156,7 +120,6 @@ export default function IntegrationAccountDetailPage() {
     staleTime: 10_000,
   });
 
-  const displayUser = user ?? readStoredAuth().user;
   const queryClient = useQueryClient();
 
   const [approvalCode, setApprovalCode] = useState("");
@@ -194,7 +157,7 @@ export default function IntegrationAccountDetailPage() {
     } catch {
       return "{}";
     }
-  }, [account?.config]);
+  }, [account]);
 
   if (!sessionOk || !displayUser) {
     return (

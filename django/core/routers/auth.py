@@ -9,7 +9,7 @@ from ninja import Router, Schema
 from ninja.security import django_auth
 
 from core.models import ApiToken, Organization, OrganizationMember, User
-from core.services.auth import ApiKeyAuth
+from core.services.auth import ApiKeyAuth, auth_service
 from core.services.signup_organization import create_personal_organization_for_signup
 from core.utils.schemas import ErrorResponseSchema
 
@@ -46,6 +46,16 @@ class OrganizationResponse(Schema):
     name: str
     domain: str
     status: str
+
+
+class UserUpdateRequest(Schema):
+    first_name: str
+    last_name: str
+
+
+class OrganizationUpdateRequest(Schema):
+    name: Optional[str] = None
+    domain: Optional[str] = None
 
 
 class AuthResponse(Schema):
@@ -202,6 +212,66 @@ def get_current_user(request):
         return 200, get_user_response(user)
     except Exception:
         return 401, ErrorResponseSchema(error="Authentication required", error_code="AUTH_REQUIRED")
+
+
+@router.patch(
+    "/me",
+    response={200: UserResponse, 400: ErrorResponseSchema, 401: ErrorResponseSchema},
+    auth=[ApiKeyAuth(), django_auth],
+)
+def patch_current_user(request, data: UserUpdateRequest):
+    user = auth_service.get_user_from_request(request)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return 401, ErrorResponseSchema(error="Authentication required", error_code="AUTH_REQUIRED")
+
+    user.first_name = data.first_name.strip() or None
+    user.last_name = data.last_name.strip() or None
+    user.save()
+    user = User.objects.select_related("organization").get(pk=user.pk)
+    return 200, get_user_response(user)
+
+
+@router.patch(
+    "/organization",
+    response={
+        200: OrganizationResponse,
+        400: ErrorResponseSchema,
+        401: ErrorResponseSchema,
+        403: ErrorResponseSchema,
+    },
+    auth=[ApiKeyAuth(), django_auth],
+)
+def patch_active_organization(request, data: OrganizationUpdateRequest):
+    user = auth_service.get_user_from_request(request)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return 401, ErrorResponseSchema(error="Authentication required", error_code="AUTH_REQUIRED")
+    org = auth_service.get_active_organization(request)
+    if user.organization_id != org.id:
+        return 403, ErrorResponseSchema(
+            error="Only users whose primary organization is the active one can edit these settings.",
+            error_code="ORG_PRIMARY_REQUIRED",
+        )
+    if data.name is None and data.domain is None:
+        return 400, ErrorResponseSchema(error="No fields to update.", error_code="NO_FIELDS")
+
+    if data.name is not None:
+        name = data.name.strip()
+        if not name:
+            return 400, ErrorResponseSchema(error="Organization name cannot be empty.", error_code="ORG_NAME_INVALID")
+        org.name = name[: Organization._meta.get_field("name").max_length]
+
+    if data.domain is not None:
+        domain = data.domain.strip()
+        if not domain:
+            return 400, ErrorResponseSchema(error="Organization domain cannot be empty.", error_code="ORG_DOMAIN_INVALID")
+        domain = domain[: Organization._meta.get_field("domain").max_length]
+        if Organization.objects.filter(domain=domain).exclude(id=org.id).exists():
+            return 400, ErrorResponseSchema(error="That domain is already in use.", error_code="ORG_DOMAIN_TAKEN")
+        org.domain = domain
+
+    org.save()
+    org.refresh_from_db()
+    return 200, get_organization_response(org)
 
 
 @router.post("/logout", response={200: dict, 401: ErrorResponseSchema}, auth=[ApiKeyAuth(), django_auth])

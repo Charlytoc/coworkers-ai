@@ -1,5 +1,4 @@
-import { API_BASE_URL } from "@/lib/api-base";
-import { ORGANIZATION_HEADER } from "@/lib/auth-storage";
+import { apiFetch, apiReadJson, throwApiError } from "@/lib/api-request";
 import type { CyberIdentity } from "@/lib/workspace-cyber-identities";
 import type { WorkspaceIntegrationItem } from "@/lib/workspace-integrations";
 
@@ -49,6 +48,64 @@ export type JobAssignment = {
   created: string;
 };
 
+export type JobAssignmentActionDirectRecipient = {
+  external_thread_id: string;
+  label?: string | null;
+};
+
+export const REPLY_DM_SLUGS = ["telegram.reply_dm", "instagram.reply_dm"] as const;
+
+export const DIRECT_DM_SLUGS = ["telegram.send_direct_dm", "instagram.send_direct_dm"] as const;
+
+export function isReplyDmSlug(slug: string): boolean {
+  return (REPLY_DM_SLUGS as readonly string[]).includes(slug);
+}
+
+export function isDirectDmSlug(slug: string): boolean {
+  return (DIRECT_DM_SLUGS as readonly string[]).includes(slug);
+}
+
+export function pruneDirectDmRecipientsByKeys(
+  map: Record<string, JobAssignmentActionDirectRecipient[]>,
+  actionKeys: string[],
+): Record<string, JobAssignmentActionDirectRecipient[]> {
+  const allowed = new Set(actionKeys);
+  const next: Record<string, JobAssignmentActionDirectRecipient[]> = {};
+  for (const [k, rows] of Object.entries(map)) {
+    if (allowed.has(k)) next[k] = rows;
+  }
+  return next;
+}
+
+export function parseActionsFromConfig(actions: Record<string, unknown>[]): {
+  actionKeys: string[];
+  directDmRecipientsByKey: Record<string, JobAssignmentActionDirectRecipient[]>;
+} {
+  const actionKeys: string[] = [];
+  const directDmRecipientsByKey: Record<string, JobAssignmentActionDirectRecipient[]> = {};
+  for (const raw of actions) {
+    const slug = String((raw as { actionable_slug?: string }).actionable_slug ?? "");
+    const acc = (raw as { integration_account_id?: string | null }).integration_account_id;
+    const key = `${slug}::${acc ?? ""}`;
+    actionKeys.push(key);
+    const drm = (raw as { direct_dm_recipients?: unknown }).direct_dm_recipients;
+    if (!Array.isArray(drm) || drm.length === 0) continue;
+    const rows: JobAssignmentActionDirectRecipient[] = [];
+    for (const r of drm) {
+      if (!r || typeof r !== "object") continue;
+      const ob = r as Record<string, unknown>;
+      const tid = String(ob.external_thread_id ?? "").trim();
+      if (!tid) continue;
+      const labelRaw = ob.label;
+      const label =
+        typeof labelRaw === "string" && labelRaw.trim() ? labelRaw.trim() : null;
+      rows.push({ external_thread_id: tid, label });
+    }
+    if (rows.length) directDmRecipientsByKey[key] = rows;
+  }
+  return { actionKeys, directDmRecipientsByKey };
+}
+
 export type JobAssignmentCreateInput = {
   role_name: string;
   description?: string;
@@ -75,6 +132,23 @@ export function keyToAction(key: string): { actionable_slug: string; integration
   return { actionable_slug: slug, integration_account_id: rest || null };
 }
 
+export function directDmRecipientsValidationError(
+  actionKeys: string[],
+  directDmRecipientsByKey: Record<string, JobAssignmentActionDirectRecipient[]>,
+): string | null {
+  for (const key of actionKeys) {
+    const { actionable_slug } = keyToAction(key);
+    if (!isDirectDmSlug(actionable_slug)) continue;
+    const cleaned = (directDmRecipientsByKey[key] ?? []).filter((r) =>
+      (r.external_thread_id ?? "").trim(),
+    );
+    if (cleaned.length === 0) {
+      return `Action "${actionable_slug}" needs at least one direct DM recipient with a non-empty thread id.`;
+    }
+  }
+  return null;
+}
+
 export function buildIdentitiesPayload(
   selectedIdentityIds: string[],
   identities: CyberIdentity[],
@@ -85,8 +159,26 @@ export function buildIdentitiesPayload(
     .map((i) => ({ id: i.id, type: i.type, config: i.config ?? {} }));
 }
 
-export function buildActionsPayload(selectedActionKeys: string[]) {
-  return selectedActionKeys.map((key) => keyToAction(key));
+export function buildActionsPayload(
+  selectedActionKeys: string[],
+  directDmRecipientsByKey: Record<string, JobAssignmentActionDirectRecipient[]> = {},
+): Record<string, unknown>[] {
+  return selectedActionKeys.map((key) => {
+    const { actionable_slug, integration_account_id } = keyToAction(key);
+    const row: Record<string, unknown> = { actionable_slug };
+    if (integration_account_id) {
+      row.integration_account_id = integration_account_id;
+    }
+    const rec = directDmRecipientsByKey[key]?.filter((r) => (r.external_thread_id ?? "").trim()) ?? [];
+    if (rec.length) {
+      row.direct_dm_recipients = rec.map((r) => {
+        const tid = (r.external_thread_id ?? "").trim();
+        const label = (r.label ?? "").trim();
+        return label ? { external_thread_id: tid, label } : { external_thread_id: tid };
+      });
+    }
+    return row;
+  });
 }
 
 /** Inbound events that map to at most one enabled listener per integration account. */
@@ -199,11 +291,11 @@ export function removeIntegrationGroup(
   );
   const hasTelegramSend = newKeys.some((k) => {
     const a = keyToAction(k);
-    return a.actionable_slug === "telegram.send_message" && a.integration_account_id != null;
+    return a.actionable_slug === "telegram.reply_dm" && a.integration_account_id != null;
   });
   const hasInstagramSend = newKeys.some((k) => {
     const a = keyToAction(k);
-    return a.actionable_slug === "instagram.send_message" && a.integration_account_id != null;
+    return a.actionable_slug === "instagram.reply_dm" && a.integration_account_id != null;
   });
   let eventSlugs = [...integrationEventSlugs];
   if (!hasTelegramSend) {
@@ -277,33 +369,9 @@ export function buildTriggersPayload(
   return [...events, ...otherTriggers];
 }
 
-/** Build MultiSelect keys from persisted ``config.actions``. */
+/** Build MultiSelect keys from persisted ``config.actions`` (no per-action extras). */
 export function actionsToKeys(actions: Record<string, unknown>[]): string[] {
-  return actions.map((a) => {
-    const slug = String((a as { actionable_slug?: string }).actionable_slug ?? "");
-    const raw = (a as { integration_account_id?: string | null }).integration_account_id;
-    return `${slug}::${raw ?? ""}`;
-  });
-}
-
-function authHeaders(token: string, organizationId: string, json = false): HeadersInit {
-  const base: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    [ORGANIZATION_HEADER]: organizationId,
-  };
-  if (json) base["Content-Type"] = "application/json";
-  return base;
-}
-
-async function parseError(response: Response, fallback: string): Promise<never> {
-  let message = fallback;
-  try {
-    const body = (await response.json()) as { error?: string };
-    if (body?.error) message = body.error;
-  } catch {
-    // ignore
-  }
-  throw new Error(`${message} (${response.status})`);
+  return parseActionsFromConfig(actions).actionKeys;
 }
 
 export async function fetchWorkspaceActionables(
@@ -311,11 +379,12 @@ export async function fetchWorkspaceActionables(
   organizationId: string,
   workspaceId: number,
 ): Promise<ActionableCatalogRow[]> {
-  const response = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/actionables/`, {
-    headers: authHeaders(token, organizationId),
-  });
-  if (!response.ok) await parseError(response, "Failed to load actionables");
-  return response.json() as Promise<ActionableCatalogRow[]>;
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/actionables/`,
+    token,
+    organizationId,
+  );
+  return apiReadJson<ActionableCatalogRow[]>(response, "Failed to load actionables");
 }
 
 export async function fetchJobAssignments(
@@ -323,11 +392,12 @@ export async function fetchJobAssignments(
   organizationId: string,
   workspaceId: number,
 ): Promise<JobAssignment[]> {
-  const response = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/job-assignments/`, {
-    headers: authHeaders(token, organizationId),
-  });
-  if (!response.ok) await parseError(response, "Failed to load job assignments");
-  return response.json() as Promise<JobAssignment[]>;
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/job-assignments/`,
+    token,
+    organizationId,
+  );
+  return apiReadJson<JobAssignment[]>(response, "Failed to load job assignments");
 }
 
 export async function fetchJobAssignment(
@@ -336,12 +406,12 @@ export async function fetchJobAssignment(
   workspaceId: number,
   jobAssignmentId: string,
 ): Promise<JobAssignment> {
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/job-assignments/${jobAssignmentId}/`,
-    { headers: authHeaders(token, organizationId) },
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/job-assignments/${jobAssignmentId}/`,
+    token,
+    organizationId,
   );
-  if (!response.ok) await parseError(response, "Failed to load job assignment");
-  return response.json() as Promise<JobAssignment>;
+  return apiReadJson<JobAssignment>(response, "Failed to load job assignment");
 }
 
 export async function createJobAssignment(
@@ -350,13 +420,11 @@ export async function createJobAssignment(
   workspaceId: number,
   input: JobAssignmentCreateInput,
 ): Promise<JobAssignment> {
-  const response = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/job-assignments/`, {
+  const response = await apiFetch(`/workspaces/${workspaceId}/job-assignments/`, token, organizationId, {
     method: "POST",
-    headers: authHeaders(token, organizationId, true),
-    body: JSON.stringify(input),
+    jsonBody: input,
   });
-  if (!response.ok) await parseError(response, "Failed to create job assignment");
-  return response.json() as Promise<JobAssignment>;
+  return apiReadJson<JobAssignment>(response, "Failed to create job assignment");
 }
 
 export async function updateJobAssignment(
@@ -366,16 +434,16 @@ export async function updateJobAssignment(
   jobAssignmentId: string,
   input: JobAssignmentUpdateInput,
 ): Promise<JobAssignment> {
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/job-assignments/${jobAssignmentId}/`,
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/job-assignments/${jobAssignmentId}/`,
+    token,
+    organizationId,
     {
       method: "PATCH",
-      headers: authHeaders(token, organizationId, true),
-      body: JSON.stringify(input),
+      jsonBody: input,
     },
   );
-  if (!response.ok) await parseError(response, "Failed to update job assignment");
-  return response.json() as Promise<JobAssignment>;
+  return apiReadJson<JobAssignment>(response, "Failed to update job assignment");
 }
 
 export async function deleteJobAssignment(
@@ -384,14 +452,15 @@ export async function deleteJobAssignment(
   workspaceId: number,
   jobAssignmentId: string,
 ): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/job-assignments/${jobAssignmentId}/`,
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/job-assignments/${jobAssignmentId}/`,
+    token,
+    organizationId,
     {
       method: "DELETE",
-      headers: authHeaders(token, organizationId),
     },
   );
   if (!response.ok && response.status !== 204) {
-    await parseError(response, "Failed to delete job assignment");
+    await throwApiError(response, "Failed to delete job assignment");
   }
 }

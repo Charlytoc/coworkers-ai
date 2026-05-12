@@ -11,11 +11,10 @@ from core.schemas.integration_account import SenderApprovalStatus
 from core.services.chat_clear_commands import CLEAR_CONTEXT_REPLY, is_clear_context_text
 from core.services.integration_senders import merge_extractions, upsert_sender
 from core.services.conversations import (
-    append_user_message,
     archive_conversation,
     find_active_conversation,
-    get_or_create_active_conversation,
 )
+from core.services.inbound_dm_agent_pipeline import enqueue_inbound_dm_task_execution
 from core.services.instagram_service import (
     get_access_token,
     get_ig_user_id,
@@ -24,10 +23,6 @@ from core.services.instagram_service import (
     instagram_send_message,
 )
 from core.services.job_task_processor_agent import JobTaskProcessorAgent
-from core.services.task_execution_runner import (
-    create_queued_event_task_execution,
-    enqueue_task_execution,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -104,50 +99,25 @@ def process_instagram_dm(
         )
         return
 
-    identity = JobTaskProcessorAgent.primary_identity_for_job(job)
-    if identity is None:
+    enqueued = enqueue_inbound_dm_task_execution(
+        job=job,
+        account=account,
+        external_thread_id=sender_igsid,
+        external_user_id=sender_igsid,
+        text=text,
+        event_slug=INSTAGRAM_DM_MESSAGE.slug,
+        structured_message={"instagram_message": messaging},
+        empty_text_instructions="Instagram inbound message (no text).",
+    )
+    if not enqueued:
         logger.warning(
-            "process_instagram_dm no_primary_identity job_id=%s integration_account_id=%s",
+            "process_instagram_dm enqueue_skipped job_id=%s integration_account_id=%s",
             job.id,
             account.id,
         )
         return
 
     logger.info(
-        "process_instagram_dm job_selected job_id=%s identity_id=%s",
+        "process_instagram_dm enqueue_agent job_id=%s",
         job.id,
-        identity.id,
     )
-
-    convo = get_or_create_active_conversation(
-        account=account,
-        cyber_identity=identity,
-        external_thread_id=sender_igsid,
-        external_user_id=sender_igsid,
-    )
-
-    user_msg = append_user_message(
-        convo,
-        content_text=text,
-        content_structured={"instagram_message": messaging},
-    )
-
-    logger.info(
-        "process_instagram_dm enqueue_agent job_id=%s conversation_id=%s user_message_id=%s",
-        job.id,
-        convo.id,
-        user_msg.id,
-    )
-    channel = JobTaskProcessorAgent.integration_channel_for_thread(account, sender_igsid)
-    if channel is None:
-        return
-    instructions = text if text else "Instagram inbound message (no text)."
-    task_ex = create_queued_event_task_execution(
-        job=job,
-        task_instructions=instructions,
-        channel=channel,
-        event_slug=INSTAGRAM_DM_MESSAGE.slug,
-        conversation_id=convo.id,
-        triggering_message_id=user_msg.id,
-    )
-    enqueue_task_execution(task_ex.id)

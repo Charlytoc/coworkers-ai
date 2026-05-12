@@ -1,12 +1,4 @@
-import { API_BASE_URL } from "@/lib/api-base";
-import { ORGANIZATION_HEADER } from "@/lib/auth-storage";
-
-function authHeaders(token: string, organizationId: string): HeadersInit {
-  return {
-    Authorization: `Bearer ${token}`,
-    [ORGANIZATION_HEADER]: organizationId,
-  };
-}
+import { apiFetch, apiReadJson } from "@/lib/api-request";
 
 export type WorkspaceIntegrationItem = {
   id: string;
@@ -22,13 +14,8 @@ export async function fetchWorkspaceIntegrations(
   organizationId: string,
   workspaceId: number,
 ): Promise<WorkspaceIntegrationItem[]> {
-  const response = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/integrations/`, {
-    headers: authHeaders(token, organizationId),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to load integrations (${response.status})`);
-  }
-  return response.json() as Promise<WorkspaceIntegrationItem[]>;
+  const response = await apiFetch(`/workspaces/${workspaceId}/integrations/`, token, organizationId);
+  return apiReadJson<WorkspaceIntegrationItem[]>(response, "Failed to load integrations");
 }
 
 export type IntegrationAccountSenderApprovalStatus =
@@ -67,14 +54,12 @@ export async function fetchWorkspaceIntegrationDetail(
   workspaceId: number,
   integrationAccountId: string,
 ): Promise<WorkspaceIntegrationDetail> {
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/integrations/${integrationAccountId}/`,
-    { headers: authHeaders(token, organizationId) },
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/integrations/${integrationAccountId}/`,
+    token,
+    organizationId,
   );
-  if (!response.ok) {
-    throw new Error(`Failed to load integration (${response.status})`);
-  }
-  return response.json() as Promise<WorkspaceIntegrationDetail>;
+  return apiReadJson<WorkspaceIntegrationDetail>(response, "Failed to load integration");
 }
 
 export type IntegrationTaskExecutionItem = {
@@ -108,14 +93,12 @@ export async function fetchIntegrationConversations(
   integrationAccountId: string,
   limit = 100,
 ): Promise<IntegrationConversationItem[]> {
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/integrations/${integrationAccountId}/conversations/?limit=${limit}`,
-    { headers: authHeaders(token, organizationId) },
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/integrations/${integrationAccountId}/conversations/?limit=${limit}`,
+    token,
+    organizationId,
   );
-  if (!response.ok) {
-    throw new Error(`Failed to load conversations (${response.status})`);
-  }
-  return response.json() as Promise<IntegrationConversationItem[]>;
+  return apiReadJson<IntegrationConversationItem[]>(response, "Failed to load conversations");
 }
 
 export async function fetchIntegrationTaskExecutions(
@@ -125,12 +108,10 @@ export async function fetchIntegrationTaskExecutions(
   integrationAccountId: string,
   limit = 100,
 ): Promise<IntegrationTaskExecutionItem[]> {
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/integrations/${integrationAccountId}/task-executions/?limit=${limit}`,
-    { headers: authHeaders(token, organizationId) },
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/integrations/${integrationAccountId}/task-executions/?limit=${limit}`,
+    token,
+    organizationId,
   );
-  if (!response.ok) {
-    throw new Error(`Failed to load task executions (${response.status})`);
-  }
-  return response.json() as Promise<IntegrationTaskExecutionItem[]>;
+  return apiReadJson<IntegrationTaskExecutionItem[]>(response, "Failed to load task executions");
 }

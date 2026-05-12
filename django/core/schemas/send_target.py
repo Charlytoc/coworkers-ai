@@ -1,9 +1,10 @@
-"""Shapes for outbound DM send targets (agent ``send_message`` tool + prompt hints)."""
+"""Shapes for outbound DM send targets (agent send tools + prompt hints)."""
 
 from __future__ import annotations
 
 import uuid
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,7 +37,7 @@ class SendTargetResolution(BaseModel):
 
 
 class ResolvedSendTarget(BaseModel):
-    """One indexed row passed into ``make_send_message_tool`` (internal + prompt projection)."""
+    """One indexed row passed into send tools (internal + prompt projection)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -46,6 +47,7 @@ class ResolvedSendTarget(BaseModel):
     integration_account_id: uuid.UUID | None = None
     external_thread_id: str = ""
     web_user_id: int | None = None
+    target_kind: Literal["reply", "direct"] | None = None
 
     def to_public(self) -> SendTargetPublic:
         return SendTargetPublic(

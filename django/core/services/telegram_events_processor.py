@@ -8,18 +8,13 @@ from core.integrations.event_types import TELEGRAM_PRIVATE_MESSAGE
 from core.models import IntegrationAccount, JobAssignment
 from core.services.chat_clear_commands import CLEAR_CONTEXT_REPLY, is_clear_context_text
 from core.services.conversations import (
-    append_user_message,
     archive_conversation,
     find_active_conversation,
-    get_or_create_active_conversation,
 )
 from core.schemas.integration_account import SenderApprovalStatus
+from core.services.inbound_dm_agent_pipeline import enqueue_inbound_dm_task_execution
 from core.services.integration_senders import upsert_sender
 from core.services.job_task_processor_agent import JobTaskProcessorAgent
-from core.services.task_execution_runner import (
-    create_queued_event_task_execution,
-    enqueue_task_execution,
-)
 from core.services.telegram_bot import (
     get_bot_token,
     telegram_send_message,
@@ -90,35 +85,14 @@ def process_approved_message(account: IntegrationAccount, message: dict[str, Any
         telegram_send_message(bot_token, chat_id, NO_TASKS_REPLY)
         return
 
-    identity = JobTaskProcessorAgent.primary_identity_for_job(job)
-    if identity is None:
-        return
-
-    external_user_id = _external_user_id(message) or external_thread_id
-    convo = get_or_create_active_conversation(
-        account=account,
-        cyber_identity=identity,
-        external_thread_id=external_thread_id,
-        external_user_id=external_user_id,
-    )
-
     text = (message.get("text") or message.get("caption") or "").strip()
-    user_msg = append_user_message(
-        convo,
-        content_text=text,
-        content_structured={"telegram_message": message},
-    )
-
-    channel = JobTaskProcessorAgent.integration_channel_for_thread(account, external_thread_id)
-    if channel is None:
-        return
-    instructions = text if text else "Telegram inbound message (no text)."
-    task_ex = create_queued_event_task_execution(
+    enqueue_inbound_dm_task_execution(
         job=job,
-        task_instructions=instructions,
-        channel=channel,
+        account=account,
+        external_thread_id=external_thread_id,
+        external_user_id=_external_user_id(message) or external_thread_id,
+        text=text,
         event_slug=TELEGRAM_PRIVATE_MESSAGE.slug,
-        conversation_id=convo.id,
-        triggering_message_id=user_msg.id,
+        structured_message={"telegram_message": message},
+        empty_text_instructions="Telegram inbound message (no text).",
     )
-    enqueue_task_execution(task_ex.id)

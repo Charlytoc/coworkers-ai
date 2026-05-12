@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -20,46 +19,233 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { useLocalStorage } from "@mantine/hooks";
-import {
-  SELECTED_ORG_ID_KEY,
-  SELECTED_WORKSPACE_ID_KEY,
-  TOKEN_KEY,
-  USER_KEY,
-  readStoredAuth,
-  type AuthUser,
-} from "@/lib/auth-storage";
-import { fetchWorkspaces } from "@/lib/my-workspaces";
+import { useWorkspacePage } from "@/hooks/use-workspace-page";
 import { fetchWorkspaceIntegrations } from "@/lib/workspace-integrations";
 import { fetchCyberIdentities } from "@/lib/workspace-cyber-identities";
 import { IntegrationActionsTriggersEditor } from "@/components/job-assignments/integration-actions-triggers-editor";
 import {
-  actionsToKeys,
   buildActionsPayload,
   buildIdentitiesPayload,
   buildTriggersPayload,
+  directDmRecipientsValidationError,
   fetchJobAssignment,
   fetchWorkspaceActionables,
+  parseActionsFromConfig,
   splitJobTriggers,
   updateJobAssignment,
+  type ActionableCatalogRow,
   type JobAssignment,
+  type JobAssignmentActionDirectRecipient,
   type TriggerRecord,
 } from "@/lib/workspace-job-assignments";
+import type { CyberIdentity } from "@/lib/workspace-cyber-identities";
+import type { WorkspaceIntegrationItem } from "@/lib/workspace-integrations";
+
+type JobAssignmentDetailFormProps = {
+  job: JobAssignment;
+  workspaceId: number;
+  jobId: string;
+  token: string;
+  orgId: string;
+  identities: CyberIdentity[] | undefined;
+  actionables: ActionableCatalogRow[] | undefined;
+  integrations: WorkspaceIntegrationItem[] | undefined;
+};
+
+function JobAssignmentDetailForm({
+  job,
+  workspaceId,
+  jobId,
+  token,
+  orgId,
+  identities,
+  actionables,
+  integrations,
+}: JobAssignmentDetailFormProps) {
+  const queryClient = useQueryClient();
+  const [roleName, setRoleName] = useState(job.role_name);
+  const [description, setDescription] = useState(job.description ?? "");
+  const [instructions, setInstructions] = useState(job.instructions ?? "");
+  const [identityId, setIdentityId] = useState<string | null>(() => {
+    const ids = (job.config.identities ?? []).map((i) => i.id);
+    return ids[0] ?? null;
+  });
+  const [actionKeys, setActionKeys] = useState(
+    () => parseActionsFromConfig(job.config.actions ?? []).actionKeys,
+  );
+  const [directDmRecipientsByKey, setDirectDmRecipientsByKey] = useState<
+    Record<string, JobAssignmentActionDirectRecipient[]>
+  >(() => parseActionsFromConfig(job.config.actions ?? []).directDmRecipientsByKey);
+  const split = useMemo(
+    () => splitJobTriggers(job.config.triggers as TriggerRecord[] | undefined),
+    [job],
+  );
+  const [integrationEventSlugs, setIntegrationEventSlugs] = useState(
+    () => split.integrationEventSlugs,
+  );
+  const otherTriggers = split.otherTriggers;
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const invalidateList = () => {
+    void queryClient.invalidateQueries({
+      queryKey: ["job-assignments", token, orgId, workspaceId],
+    });
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const identityPayload = buildIdentitiesPayload(
+        identityId ? [identityId] : [],
+        identities ?? [],
+      );
+      const actions = buildActionsPayload(actionKeys, directDmRecipientsByKey);
+      return updateJobAssignment(token, orgId, workspaceId, jobId, {
+        role_name: roleName.trim(),
+        description: description.trim(),
+        instructions: instructions.trim(),
+        config: {
+          identities: identityPayload,
+          actions,
+          triggers: buildTriggersPayload(integrationEventSlugs, otherTriggers),
+        },
+      });
+    },
+    onSuccess: async (updated: JobAssignment) => {
+      setFormError(null);
+      invalidateList();
+      await queryClient.invalidateQueries({
+        queryKey: ["job-assignment", token, orgId, workspaceId, jobId],
+      });
+      setRoleName(updated.role_name);
+      setDescription(updated.description ?? "");
+      setInstructions(updated.instructions ?? "");
+    },
+    onError: (err: Error) => setFormError(err.message),
+  });
+
+  const identityOptions = useMemo(
+    () =>
+      (identities ?? []).map((i) => ({
+        value: i.id,
+        label: `${i.display_name} (${i.type})`,
+      })),
+    [identities],
+  );
+
+  const saveDmRecipientsError = useMemo(
+    () => directDmRecipientsValidationError(actionKeys, directDmRecipientsByKey),
+    [actionKeys, directDmRecipientsByKey],
+  );
+
+  return (
+    <Paper withBorder radius="md" p="lg">
+      <Stack gap="md">
+        <Text size="xs" c="dimmed" ff="monospace">
+          ID: {job.id}
+        </Text>
+        {formError ? (
+          <Alert color="red" title="Could not save">
+            {formError}
+          </Alert>
+        ) : null}
+        <TextInput
+          label="Role name"
+          value={roleName}
+          onChange={(e) => setRoleName(e.currentTarget.value)}
+        />
+        <Textarea
+          label="Description"
+          value={description}
+          onChange={(e) => setDescription(e.currentTarget.value)}
+          autosize
+          minRows={3}
+          maxRows={16}
+        />
+        <Textarea
+          label="Instructions"
+          value={instructions}
+          onChange={(e) => setInstructions(e.currentTarget.value)}
+          autosize
+          minRows={8}
+          maxRows={24}
+        />
+        <Select
+          label="Cyber identity"
+          description="The workspace persona this job runs as."
+          data={identityOptions}
+          value={identityId}
+          onChange={setIdentityId}
+          searchable
+          clearable={false}
+          allowDeselect={false}
+        />
+        {saveDmRecipientsError ? (
+          <Alert color="yellow" title="Direct DM actions">
+            {saveDmRecipientsError}
+          </Alert>
+        ) : null}
+        <IntegrationActionsTriggersEditor
+          actionables={actionables ?? []}
+          integrations={integrations ?? []}
+          actionKeys={actionKeys}
+          integrationEventSlugs={integrationEventSlugs}
+          directDmRecipientsByKey={directDmRecipientsByKey}
+          onActionKeysChange={setActionKeys}
+          onIntegrationEventSlugsChange={setIntegrationEventSlugs}
+          onDirectDmRecipientsByKeyChange={setDirectDmRecipientsByKey}
+        />
+        {otherTriggers.length > 0 ? (
+          <Text size="xs" c="dimmed">
+            This job also has {otherTriggers.length} non-integration trigger(s) (e.g. cron); they are
+            kept when you save and are not editable in this form yet.
+          </Text>
+        ) : null}
+        <Group justify="flex-end">
+          <Button
+            loading={saveMutation.isPending}
+            onClick={() => saveMutation.mutate()}
+            disabled={
+              !roleName.trim() ||
+                actionKeys.length === 0 ||
+                identityId == null ||
+                saveDmRecipientsError != null
+            }
+          >
+            Save changes
+          </Button>
+        </Group>
+        <div>
+          <Text size="sm" fw={600} mb="xs">
+            Raw config (read-only)
+          </Text>
+          <Paper withBorder p="sm" radius="sm">
+            <pre style={{ margin: 0, fontSize: 11, overflow: "auto", maxHeight: 240 }}>
+              {JSON.stringify(job.config, null, 2)}
+            </pre>
+          </Paper>
+        </div>
+      </Stack>
+    </Paper>
+  );
+}
 
 export default function JobAssignmentDetailPage() {
-  const router = useRouter();
   const queryClient = useQueryClient();
-  const params = useParams();
-  const workspaceIdParam = params.id;
+  const {
+    params,
+    workspaceId,
+    token,
+    orgId,
+    sessionOk,
+    displayUser,
+    workspace,
+    workspacesPending: wsPending,
+    workspaceMismatch,
+    workspaceReady,
+    selectedWorkspaceId,
+  } = useWorkspacePage();
+
   const jobIdParam = params.jobId;
-
-  const workspaceId =
-    typeof workspaceIdParam === "string"
-      ? Number.parseInt(workspaceIdParam, 10)
-      : Array.isArray(workspaceIdParam)
-        ? Number.parseInt(workspaceIdParam[0] ?? "", 10)
-        : Number.NaN;
-
   const jobId =
     typeof jobIdParam === "string"
       ? jobIdParam
@@ -67,58 +253,7 @@ export default function JobAssignmentDetailPage() {
         ? (jobIdParam[0] ?? "")
         : "";
 
-  const [sessionOk, setSessionOk] = useState(false);
-  const [user] = useLocalStorage<AuthUser | null>({
-    key: USER_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [token] = useLocalStorage<string | null>({
-    key: TOKEN_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedOrgId] = useLocalStorage<string | null>({
-    key: SELECTED_ORG_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedWorkspaceId] = useLocalStorage<number | null>({
-    key: SELECTED_WORKSPACE_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-
-  useEffect(() => {
-    const { user: stored } = readStoredAuth();
-    if (!stored) {
-      router.replace("/chat");
-      return;
-    }
-    setSessionOk(true);
-  }, [router]);
-
-  const orgId = selectedOrgId != null ? String(selectedOrgId) : null;
-
-  const { data: workspaces, isPending: wsPending } = useQuery({
-    queryKey: ["workspaces", token, orgId],
-    queryFn: () => fetchWorkspaces(token!, orgId!),
-    enabled: Boolean(token) && sessionOk && orgId != null,
-    staleTime: 30_000,
-  });
-
-  const workspace = useMemo(() => {
-    if (!workspaces?.length || Number.isNaN(workspaceId)) return null;
-    return workspaces.find((w) => w.id === workspaceId) ?? null;
-  }, [workspaces, workspaceId]);
-
-  const baseEnabled =
-    Boolean(token) &&
-    sessionOk &&
-    orgId != null &&
-    !Number.isNaN(workspaceId) &&
-    Boolean(workspace) &&
-    Boolean(jobId);
+  const baseEnabled = workspaceReady && Boolean(jobId);
 
   const { data: identities } = useQuery({
     queryKey: ["cyber-identities", token, orgId, workspaceId],
@@ -152,67 +287,11 @@ export default function JobAssignmentDetailPage() {
     staleTime: 15_000,
   });
 
-  const [roleName, setRoleName] = useState("");
-  const [description, setDescription] = useState("");
-  const [instructions, setInstructions] = useState("");
-  const [identityId, setIdentityId] = useState<string | null>(null);
-  const [actionKeys, setActionKeys] = useState<string[]>([]);
-  const [integrationEventSlugs, setIntegrationEventSlugs] = useState<string[]>([]);
-  const [otherTriggers, setOtherTriggers] = useState<TriggerRecord[]>([]);
-  const [formError, setFormError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!job) return;
-    setRoleName(job.role_name);
-    setDescription(job.description ?? "");
-    setInstructions(job.instructions ?? "");
-    const ids = (job.config.identities ?? []).map((i) => i.id);
-    setIdentityId(ids[0] ?? null);
-    setActionKeys(actionsToKeys(job.config.actions ?? []));
-    const { integrationEventSlugs: ev, otherTriggers: ot } = splitJobTriggers(
-      job.config.triggers as TriggerRecord[] | undefined,
-    );
-    setIntegrationEventSlugs(ev);
-    setOtherTriggers(ot);
-    setFormError(null);
-  }, [job]);
-
   const invalidateList = () => {
     void queryClient.invalidateQueries({
       queryKey: ["job-assignments", token, orgId, workspaceId],
     });
   };
-
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      const identityPayload = buildIdentitiesPayload(
-        identityId ? [identityId] : [],
-        identities ?? [],
-      );
-      const actions = buildActionsPayload(actionKeys);
-      return updateJobAssignment(token!, orgId!, workspaceId, jobId, {
-        role_name: roleName.trim(),
-        description: description.trim(),
-        instructions: instructions.trim(),
-        config: {
-          identities: identityPayload,
-          actions,
-          triggers: buildTriggersPayload(integrationEventSlugs, otherTriggers),
-        },
-      });
-    },
-    onSuccess: async (updated: JobAssignment) => {
-      setFormError(null);
-      invalidateList();
-      await queryClient.invalidateQueries({
-        queryKey: ["job-assignment", token, orgId, workspaceId, jobId],
-      });
-      setRoleName(updated.role_name);
-      setDescription(updated.description ?? "");
-      setInstructions(updated.instructions ?? "");
-    },
-    onError: (err: Error) => setFormError(err.message),
-  });
 
   const toggleMutation = useMutation({
     mutationFn: (next: boolean) =>
@@ -224,21 +303,6 @@ export default function JobAssignmentDetailPage() {
       invalidateList();
     },
   });
-
-  const identityOptions = useMemo(
-    () =>
-      (identities ?? []).map((i) => ({
-        value: i.id,
-        label: `${i.display_name} (${i.type})`,
-      })),
-    [identities],
-  );
-
-  const displayUser = user ?? readStoredAuth().user;
-  const workspaceMismatch =
-    selectedWorkspaceId != null &&
-    selectedWorkspaceId !== workspaceId &&
-    !Number.isNaN(workspaceId);
 
   if (!sessionOk || !displayUser) {
     return (
@@ -360,84 +424,17 @@ export default function JobAssignmentDetailPage() {
             <Loader size="sm" />
           </Center>
         ) : job ? (
-          <Paper withBorder radius="md" p="lg">
-            <Stack gap="md">
-              <Text size="xs" c="dimmed" ff="monospace">
-                ID: {job.id}
-              </Text>
-              {formError ? (
-                <Alert color="red" title="Could not save">
-                  {formError}
-                </Alert>
-              ) : null}
-              <TextInput
-                label="Role name"
-                value={roleName}
-                onChange={(e) => setRoleName(e.currentTarget.value)}
-              />
-              <Textarea
-                label="Description"
-                value={description}
-                onChange={(e) => setDescription(e.currentTarget.value)}
-                autosize
-                minRows={3}
-                maxRows={16}
-              />
-              <Textarea
-                label="Instructions"
-                value={instructions}
-                onChange={(e) => setInstructions(e.currentTarget.value)}
-                autosize
-                minRows={8}
-                maxRows={24}
-              />
-              <Select
-                label="Cyber identity"
-                description="The workspace persona this job runs as."
-                data={identityOptions}
-                value={identityId}
-                onChange={setIdentityId}
-                searchable
-                clearable={false}
-                allowDeselect={false}
-              />
-              <IntegrationActionsTriggersEditor
-                actionables={actionables ?? []}
-                integrations={integrations ?? []}
-                actionKeys={actionKeys}
-                integrationEventSlugs={integrationEventSlugs}
-                onActionKeysChange={setActionKeys}
-                onIntegrationEventSlugsChange={setIntegrationEventSlugs}
-              />
-              {otherTriggers.length > 0 ? (
-                <Text size="xs" c="dimmed">
-                  This job also has {otherTriggers.length} non-integration trigger(s) (e.g. cron); they are
-                  kept when you save and are not editable in this form yet.
-                </Text>
-              ) : null}
-              <Group justify="flex-end">
-                <Button
-                  loading={saveMutation.isPending}
-                  onClick={() => saveMutation.mutate()}
-                  disabled={
-                    !roleName.trim() || actionKeys.length === 0 || identityId == null
-                  }
-                >
-                  Save changes
-                </Button>
-              </Group>
-              <div>
-                <Text size="sm" fw={600} mb="xs">
-                  Raw config (read-only)
-                </Text>
-                <Paper withBorder p="sm" radius="sm">
-                  <pre style={{ margin: 0, fontSize: 11, overflow: "auto", maxHeight: 240 }}>
-                    {JSON.stringify(job.config, null, 2)}
-                  </pre>
-                </Paper>
-              </div>
-            </Stack>
-          </Paper>
+          <JobAssignmentDetailForm
+            key={job.id}
+            job={job}
+            workspaceId={workspaceId}
+            jobId={jobId}
+            token={token!}
+            orgId={orgId!}
+            identities={identities}
+            actionables={actionables}
+            integrations={integrations}
+          />
         ) : (
           <Alert color="gray" title="Not found">
             This job assignment does not exist or was removed.

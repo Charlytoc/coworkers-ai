@@ -1,12 +1,4 @@
-import { API_BASE_URL } from "@/lib/api-base";
-import { ORGANIZATION_HEADER } from "@/lib/auth-storage";
-
-function authHeaders(token: string, organizationId: string): HeadersInit {
-  return {
-    Authorization: `Bearer ${token}`,
-    [ORGANIZATION_HEADER]: organizationId,
-  };
-}
+import { apiFetch, apiReadJson, throwApiError } from "@/lib/api-request";
 
 export type TelegramConnectResponse = {
   integration_account_id: string;
@@ -19,25 +11,19 @@ export async function connectTelegramBot(
   workspaceId: number,
   body: { bot_token: string; display_name?: string | null },
 ): Promise<TelegramConnectResponse> {
-  const response = await fetch(
-    `${API_BASE_URL}/integrations/telegram/workspaces/${workspaceId}/telegram/connect`,
+  const response = await apiFetch(
+    `/integrations/telegram/workspaces/${workspaceId}/telegram/connect`,
+    token,
+    organizationId,
     {
       method: "POST",
-      headers: {
-        ...authHeaders(token, organizationId),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+      jsonBody: {
         bot_token: body.bot_token,
         display_name: body.display_name ?? null,
-      }),
+      },
     },
   );
-  if (!response.ok) {
-    const err = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(err?.error ?? `Failed to connect Telegram (${response.status})`);
-  }
-  return response.json() as Promise<TelegramConnectResponse>;
+  return apiReadJson<TelegramConnectResponse>(response, "Failed to connect Telegram");
 }
 
 export type TelegramApproveResponse = {
@@ -50,25 +36,19 @@ export async function approveTelegramSender(
   workspaceId: number,
   body: { integration_account_id: string; code: string },
 ): Promise<TelegramApproveResponse> {
-  const response = await fetch(
-    `${API_BASE_URL}/integrations/telegram/workspaces/${workspaceId}/telegram/approve-sender`,
+  const response = await apiFetch(
+    `/integrations/telegram/workspaces/${workspaceId}/telegram/approve-sender`,
+    token,
+    organizationId,
     {
       method: "POST",
-      headers: {
-        ...authHeaders(token, organizationId),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+      jsonBody: {
         integration_account_id: body.integration_account_id,
         code: body.code,
-      }),
+      },
     },
   );
-  if (!response.ok) {
-    const err = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(err?.error ?? `Failed to approve sender (${response.status})`);
-  }
-  return response.json() as Promise<TelegramApproveResponse>;
+  return apiReadJson<TelegramApproveResponse>(response, "Failed to approve sender");
 }
 
 export async function disconnectTelegramIntegration(
@@ -77,15 +57,15 @@ export async function disconnectTelegramIntegration(
   workspaceId: number,
   integrationAccountId: string,
 ): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/integrations/telegram/workspaces/${workspaceId}/telegram/${integrationAccountId}`,
+  const response = await apiFetch(
+    `/integrations/telegram/workspaces/${workspaceId}/telegram/${integrationAccountId}`,
+    token,
+    organizationId,
     {
       method: "DELETE",
-      headers: authHeaders(token, organizationId),
     },
   );
   if (!response.ok && response.status !== 204) {
-    const err = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(err?.error ?? `Failed to disconnect Telegram (${response.status})`);
+    await throwApiError(response, "Failed to disconnect Telegram");
   }
 }

@@ -11,6 +11,7 @@ import {
   Select,
   Stack,
   Text,
+  TextInput,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import type { WorkspaceIntegrationItem } from "@/lib/workspace-integrations";
@@ -18,33 +19,91 @@ import {
   actionKey,
   groupSelectionByIntegration,
   integrationActionOptionsForAccount,
+  isDirectDmSlug,
   keyToAction,
   mergeIntegrationGroup,
+  pruneDirectDmRecipientsByKeys,
   PROVIDER_INBOUND_EVENTS,
   removeIntegrationGroup,
   systemActionOptions,
   type ActionableCatalogRow,
+  type JobAssignmentActionDirectRecipient,
 } from "@/lib/workspace-job-assignments";
+
+function DirectDmRecipientsFields({
+  title,
+  rows,
+  onChange,
+}: {
+  title: string;
+  rows: JobAssignmentActionDirectRecipient[];
+  onChange: (rows: JobAssignmentActionDirectRecipient[]) => void;
+}) {
+  const setRow = (i: number, patch: Partial<JobAssignmentActionDirectRecipient>) => {
+    const next = rows.map((r, j) => (j === i ? { ...r, ...patch } : r));
+    onChange(next);
+  };
+  const addRow = () => onChange([...rows, { external_thread_id: "", label: "" }]);
+  const removeRow = (i: number) => onChange(rows.filter((_, j) => j !== i));
+
+  return (
+    <Stack gap="xs" mt="sm">
+      <Text size="xs" fw={600}>
+        {title}
+      </Text>
+      <Text size="xs" c="dimmed">
+        Thread id is the provider conversation id (Telegram chat id, Instagram IGSID). Label is optional
+        (shown to the agent).
+      </Text>
+      {rows.map((row, i) => (
+        <Group key={i} align="flex-end" wrap="nowrap" grow>
+          <TextInput
+            label={i === 0 ? "Thread id" : undefined}
+            placeholder="external_thread_id"
+            value={row.external_thread_id}
+            onChange={(e) => setRow(i, { external_thread_id: e.currentTarget.value })}
+          />
+          <TextInput
+            label={i === 0 ? "Label (optional)" : undefined}
+            placeholder="e.g. VIP lead"
+            value={row.label ?? ""}
+            onChange={(e) => setRow(i, { label: e.currentTarget.value })}
+          />
+          <Button size="xs" variant="light" color="red" onClick={() => removeRow(i)} disabled={rows.length <= 1}>
+            Remove
+          </Button>
+        </Group>
+      ))}
+      <Button size="xs" variant="default" onClick={addRow}>
+        Add recipient
+      </Button>
+    </Stack>
+  );
+}
 
 type Props = {
   actionables: ActionableCatalogRow[];
   integrations: WorkspaceIntegrationItem[];
   actionKeys: string[];
   integrationEventSlugs: string[];
+  directDmRecipientsByKey: Record<string, JobAssignmentActionDirectRecipient[]>;
   onActionKeysChange: (keys: string[]) => void;
   onIntegrationEventSlugsChange: (slugs: string[]) => void;
+  onDirectDmRecipientsByKeyChange: (next: Record<string, JobAssignmentActionDirectRecipient[]>) => void;
 };
 
 type ModalDraft = {
   accountId: string;
   triggerSlugs: string[];
   actionKeysForAccount: string[];
+  directDmRecipientsByKey: Record<string, JobAssignmentActionDirectRecipient[]>;
 };
 
 const EMPTY_DRAFT: ModalDraft = {
   accountId: "",
   triggerSlugs: [],
   actionKeysForAccount: [],
+  directDmRecipientsByKey: {},
 };
 
 export function IntegrationActionsTriggersEditor({
@@ -52,8 +111,10 @@ export function IntegrationActionsTriggersEditor({
   integrations,
   actionKeys,
   integrationEventSlugs,
+  directDmRecipientsByKey,
   onActionKeysChange,
   onIntegrationEventSlugsChange,
+  onDirectDmRecipientsByKeyChange,
 }: Props) {
   const [opened, { open, close }] = useDisclosure(false);
   const [modalMode, setModalMode] = useState<"add" | "edit">("add");
@@ -89,10 +150,25 @@ export function IntegrationActionsTriggersEditor({
         accountId: integrationAccountId,
         triggerSlugs: [...g.eventSlugs],
         actionKeysForAccount: [...g.actionKeys],
+        directDmRecipientsByKey: (() => {
+          const rec: Record<string, JobAssignmentActionDirectRecipient[]> = {};
+          for (const k of g.actionKeys) {
+            if (!isDirectDmSlug(keyToAction(k).actionable_slug)) continue;
+            const existing = directDmRecipientsByKey[k];
+            rec[k] =
+              existing && existing.length > 0
+                ? existing.map((x) => ({
+                    external_thread_id: x.external_thread_id,
+                    label: x.label ?? "",
+                  }))
+                : [{ external_thread_id: "", label: "" }];
+          }
+          return rec;
+        })(),
       });
       open();
     },
-    [attached, open],
+    [attached, directDmRecipientsByKey, open],
   );
 
   const closeModal = useCallback(() => {
@@ -136,6 +212,13 @@ export function IntegrationActionsTriggersEditor({
       draft.triggerSlugs,
       integrations,
     );
+    let nextRecipients = pruneDirectDmRecipientsByKeys(directDmRecipientsByKey, nextKeys);
+    for (const [k, rows] of Object.entries(draft.directDmRecipientsByKey)) {
+      if (draft.actionKeysForAccount.includes(k)) {
+        nextRecipients = { ...nextRecipients, [k]: rows };
+      }
+    }
+    onDirectDmRecipientsByKeyChange(nextRecipients);
     onActionKeysChange(nextKeys);
     onIntegrationEventSlugsChange(nextSlugs);
     closeModal();
@@ -144,8 +227,10 @@ export function IntegrationActionsTriggersEditor({
     integrationEventSlugs,
     draft,
     integrations,
+    directDmRecipientsByKey,
     onActionKeysChange,
     onIntegrationEventSlugsChange,
+    onDirectDmRecipientsByKeyChange,
     closeModal,
   ]);
 
@@ -156,10 +241,11 @@ export function IntegrationActionsTriggersEditor({
         integrationEventSlugs,
         integrationAccountId,
       );
+      onDirectDmRecipientsByKeyChange(pruneDirectDmRecipientsByKeys(directDmRecipientsByKey, k));
       onActionKeysChange(k);
       onIntegrationEventSlugsChange(s);
     },
-    [actionKeys, integrationEventSlugs, onActionKeysChange, onIntegrationEventSlugsChange],
+    [actionKeys, integrationEventSlugs, directDmRecipientsByKey, onActionKeysChange, onIntegrationEventSlugsChange, onDirectDmRecipientsByKeyChange],
   );
 
   const onSystemToolsChange = useCallback(
@@ -233,6 +319,29 @@ export function IntegrationActionsTriggersEditor({
                   );
                 })}
               </Group>
+              {g.actionKeys
+                .filter((k) => isDirectDmSlug(keyToAction(k).actionable_slug))
+                .map((ak) => {
+                  const row = actionables.find((a) => actionKey(a) === ak);
+                  const title = `Recipients — ${row?.name ?? "direct DM"}`;
+                  const rows =
+                    directDmRecipientsByKey[ak] && directDmRecipientsByKey[ak].length > 0
+                      ? directDmRecipientsByKey[ak]
+                      : [{ external_thread_id: "", label: "" }];
+                  return (
+                    <DirectDmRecipientsFields
+                      key={ak}
+                      title={title}
+                      rows={rows}
+                      onChange={(next) =>
+                        onDirectDmRecipientsByKeyChange({
+                          ...directDmRecipientsByKey,
+                          [ak]: next,
+                        })
+                      }
+                    />
+                  );
+                })}
             </Paper>
           ))}
           <Button
@@ -314,9 +423,43 @@ export function IntegrationActionsTriggersEditor({
                 label="Actions on this account"
                 data={actionOptionsForDraft}
                 value={draft.actionKeysForAccount}
-                onChange={(v) => setDraft((d) => ({ ...d, actionKeysForAccount: v }))}
+                onChange={(v) =>
+                  setDraft((d) => {
+                    const nextKeys = v;
+                    const rec = { ...d.directDmRecipientsByKey };
+                    for (const key of nextKeys) {
+                      if (isDirectDmSlug(keyToAction(key).actionable_slug) && !rec[key]) {
+                        rec[key] = [{ external_thread_id: "", label: "" }];
+                      }
+                    }
+                    for (const k of Object.keys(rec)) {
+                      if (!nextKeys.includes(k)) delete rec[k];
+                    }
+                    return { ...d, actionKeysForAccount: nextKeys, directDmRecipientsByKey: rec };
+                  })
+                }
                 searchable
               />
+              {draft.actionKeysForAccount
+                .filter((k) => isDirectDmSlug(keyToAction(k).actionable_slug))
+                .map((ak) => {
+                  const row = actionables.find((a) => actionKey(a) === ak);
+                  const title = `Recipients — ${row?.name ?? "direct DM"}`;
+                  const rows = draft.directDmRecipientsByKey[ak] ?? [{ external_thread_id: "", label: "" }];
+                  return (
+                    <DirectDmRecipientsFields
+                      key={ak}
+                      title={title}
+                      rows={rows}
+                      onChange={(next) =>
+                        setDraft((d) => ({
+                          ...d,
+                          directDmRecipientsByKey: { ...d.directDmRecipientsByKey, [ak]: next },
+                        }))
+                      }
+                    />
+                  );
+                })}
             </>
           ) : null}
 

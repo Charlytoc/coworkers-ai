@@ -36,6 +36,15 @@ JobAssignmentTrigger = Annotated[
 ]
 
 
+class JobAssignmentActionDirectRecipient(BaseModel):
+    """Allowlisted thread for a proactive ``*.send_direct_dm`` action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    external_thread_id: str
+    label: str | None = None
+
+
 class JobAssignmentAction(BaseModel):
     """One allowed actionable binding (slug + optional integration account)."""
 
@@ -43,6 +52,7 @@ class JobAssignmentAction(BaseModel):
 
     actionable_slug: str
     integration_account_id: UUID | None = None
+    direct_dm_recipients: list[JobAssignmentActionDirectRecipient] = Field(default_factory=list)
 
 
 IntegrationAccountProvider = Literal["telegram", "instagram", "gmail"]

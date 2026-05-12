@@ -1,6 +1,5 @@
-import { API_BASE_URL } from "@/lib/api-base";
 import type { components } from "@/lib/api/schema";
-import { ORGANIZATION_HEADER } from "@/lib/auth-storage";
+import { apiFetch, apiReadJson, throwApiError } from "@/lib/api-request";
 
 export const ARTIFACT_KIND_OPTIONS = [
   { value: "text", label: "Text" },
@@ -63,24 +62,6 @@ export type WorkspaceArtifactFilters = {
   limit?: number;
 };
 
-function authHeaders(token: string, organizationId: string): HeadersInit {
-  return {
-    Authorization: `Bearer ${token}`,
-    [ORGANIZATION_HEADER]: organizationId,
-  };
-}
-
-async function parseError(response: Response, fallback: string): Promise<never> {
-  let message = fallback;
-  try {
-    const body = (await response.json()) as { error?: string };
-    if (body?.error) message = body.error;
-  } catch {
-    // Ignore malformed error bodies.
-  }
-  throw new Error(`${message} (${response.status})`);
-}
-
 export async function fetchWorkspaceArtifacts(
   token: string,
   organizationId: string,
@@ -96,12 +77,12 @@ export async function fetchWorkspaceArtifacts(
   if (filters.kind) params.set("kind", filters.kind);
   params.set("limit", String(filters.limit ?? 100));
 
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/artifacts/?${params.toString()}`,
-    { headers: authHeaders(token, organizationId) },
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/artifacts/?${params.toString()}`,
+    token,
+    organizationId,
   );
-  if (!response.ok) await parseError(response, "Failed to load artifacts");
-  return response.json() as Promise<WorkspaceArtifact[]>;
+  return apiReadJson<WorkspaceArtifact[]>(response, "Failed to load artifacts");
 }
 
 export async function deleteWorkspaceArtifact(
@@ -110,14 +91,15 @@ export async function deleteWorkspaceArtifact(
   workspaceId: number,
   artifactId: string,
 ): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/artifacts/${artifactId}/`,
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/artifacts/${artifactId}/`,
+    token,
+    organizationId,
     {
       method: "DELETE",
-      headers: authHeaders(token, organizationId),
     },
   );
-  if (!response.ok) await parseError(response, "Failed to delete artifact");
+  if (!response.ok) await throwApiError(response, "Failed to delete artifact");
 }
 
 export async function fetchWorkspaceArtifact(
@@ -126,10 +108,10 @@ export async function fetchWorkspaceArtifact(
   workspaceId: number,
   artifactId: string,
 ): Promise<WorkspaceArtifact> {
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/artifacts/${artifactId}/`,
-    { headers: authHeaders(token, organizationId) },
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/artifacts/${artifactId}/`,
+    token,
+    organizationId,
   );
-  if (!response.ok) await parseError(response, "Failed to load artifact");
-  return response.json() as Promise<WorkspaceArtifact>;
+  return apiReadJson<WorkspaceArtifact>(response, "Failed to load artifact");
 }

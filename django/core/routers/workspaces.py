@@ -38,6 +38,10 @@ class WorkspaceCreateRequest(Schema):
     name: str
 
 
+class WorkspaceUpdateRequest(Schema):
+    name: str
+
+
 class WorkspaceResponse(Schema):
     id: int
     name: str
@@ -385,6 +389,28 @@ def create_workspace(request, data: WorkspaceCreateRequest):
         )
 
     return 201, _workspace_response(ws)
+
+
+@router.patch(
+    "/{workspace_id}/",
+    response={
+        200: WorkspaceResponse,
+        400: ErrorResponseSchema,
+        401: ErrorResponseSchema,
+        403: ErrorResponseSchema,
+        404: ErrorResponseSchema,
+    },
+    auth=[ApiKeyAuth(), django_auth],
+)
+def update_workspace(request, workspace_id: int, data: WorkspaceUpdateRequest):
+    workspace = _workspace_for_member(request, workspace_id)
+    name = (data.name or "").strip()
+    if not name:
+        return 400, ErrorResponseSchema(error="Workspace name is required.", error_code="WORKSPACE_NAME_REQUIRED")
+    workspace.name = name[: Workspace._meta.get_field("name").max_length]
+    workspace.save(update_fields=["name", "modified"])
+    workspace.refresh_from_db()
+    return 200, _workspace_response(workspace)
 
 
 CYBER_IDENTITY_TYPES = [t.value for t in CyberIdentity.Type]

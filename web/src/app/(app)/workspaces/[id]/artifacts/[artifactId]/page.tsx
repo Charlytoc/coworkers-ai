@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -20,16 +19,8 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { useDisclosure, useLocalStorage } from "@mantine/hooks";
-import {
-  SELECTED_ORG_ID_KEY,
-  SELECTED_WORKSPACE_ID_KEY,
-  TOKEN_KEY,
-  USER_KEY,
-  readStoredAuth,
-  type AuthUser,
-} from "@/lib/auth-storage";
-import { fetchWorkspaces } from "@/lib/my-workspaces";
+import { useDisclosure } from "@mantine/hooks";
+import { useWorkspacePage } from "@/hooks/use-workspace-page";
 import {
   artifactTextBody,
   artifactTitle,
@@ -41,74 +32,32 @@ import {
   type WorkspaceArtifact,
 } from "@/lib/workspace-artifacts";
 
-function parseWorkspaceId(value: string | string[] | undefined): number {
-  const raw = Array.isArray(value) ? value[0] : value;
-  return Number.parseInt(raw ?? "", 10);
-}
-
 export default function WorkspaceArtifactDetailPage() {
   const queryClient = useQueryClient();
-  const router = useRouter();
-  const params = useParams();
-  const workspaceId = parseWorkspaceId(params.id);
+  const {
+    params,
+    router,
+    workspaceId,
+    token,
+    orgId,
+    sessionOk,
+    displayUser,
+    workspace,
+    workspacesPending: wsPending,
+    workspaceMismatch,
+    workspaceReady,
+    selectedWorkspaceId,
+  } = useWorkspacePage();
+
   const artifactIdParam = params.artifactId;
   const artifactId = typeof artifactIdParam === "string" ? artifactIdParam : "";
-
-  const [user] = useLocalStorage<AuthUser | null>({
-    key: USER_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [token] = useLocalStorage<string | null>({
-    key: TOKEN_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedOrgId] = useLocalStorage<string | null>({
-    key: SELECTED_ORG_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedWorkspaceId] = useLocalStorage<number | null>({
-    key: SELECTED_WORKSPACE_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
 
   const [artifactToDelete, setArtifactToDelete] = useState<WorkspaceArtifact | null>(null);
   const [copied, setCopied] = useState(false);
   const htmlPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [metadataOpened, { toggle: toggleMetadata, close: closeMetadata }] = useDisclosure(false);
 
-  useEffect(() => {
-    const { user: stored } = readStoredAuth();
-    if (!stored) {
-      router.replace("/chat");
-    }
-  }, [router]);
-
-  const orgId = selectedOrgId != null ? String(selectedOrgId) : null;
-  const displayUser = user ?? readStoredAuth().user;
-
-  const { data: workspaces, isPending: wsPending } = useQuery({
-    queryKey: ["workspaces", token, orgId],
-    queryFn: () => fetchWorkspaces(token!, orgId!),
-    enabled: Boolean(token) && Boolean(displayUser) && orgId != null,
-    staleTime: 30_000,
-  });
-
-  const workspace = useMemo(() => {
-    if (!workspaces?.length || Number.isNaN(workspaceId)) return null;
-    return workspaces.find((w) => w.id === workspaceId) ?? null;
-  }, [workspaces, workspaceId]);
-
-  const baseEnabled =
-    Boolean(token) &&
-    Boolean(displayUser) &&
-    orgId != null &&
-    !Number.isNaN(workspaceId) &&
-    Boolean(workspace) &&
-    Boolean(artifactId);
+  const baseEnabled = workspaceReady && Boolean(artifactId);
 
   const {
     data: artifact,
@@ -134,9 +83,6 @@ export default function WorkspaceArtifactDetailPage() {
       router.push(`/workspaces/${workspaceId}/artifacts`);
     },
   });
-
-  const workspaceMismatch =
-    selectedWorkspaceId != null && selectedWorkspaceId !== workspaceId && !Number.isNaN(workspaceId);
 
   const body = artifact ? artifactTextBody(artifact) : null;
   const htmlArtifact = artifact ? isHtmlTextArtifact(artifact) : false;
@@ -177,7 +123,7 @@ export default function WorkspaceArtifactDetailPage() {
     window.setTimeout(() => setCopied(false), 1500);
   }
 
-  if (!displayUser) {
+  if (!sessionOk || !displayUser) {
     return (
       <Center style={{ flex: 1 }}>
         <Loader size="sm" />

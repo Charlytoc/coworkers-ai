@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -17,53 +17,26 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { useLocalStorage } from "@mantine/hooks";
-import {
-  SELECTED_ORG_ID_KEY,
-  SELECTED_WORKSPACE_ID_KEY,
-  TOKEN_KEY,
-  USER_KEY,
-  readStoredAuth,
-  type AuthUser,
-} from "@/lib/auth-storage";
-import { fetchWorkspaces } from "@/lib/my-workspaces";
+import { useWorkspacePage } from "@/hooks/use-workspace-page";
 import { disconnectTelegramIntegration } from "@/lib/telegram-integration";
 import { disconnectInstagramIntegration } from "@/lib/instagram-integration";
 import { fetchWorkspaceIntegrations } from "@/lib/workspace-integrations";
 
 export default function WorkspaceIntegrationsPage() {
-  const router = useRouter();
+  const {
+    router,
+    workspaceId,
+    token,
+    orgId,
+    sessionOk,
+    displayUser,
+    workspace,
+    workspacesPending: wsPending,
+    workspaceMismatch,
+    workspaceReady,
+    selectedWorkspaceId,
+  } = useWorkspacePage();
   const queryClient = useQueryClient();
-  const params = useParams();
-  const workspaceIdParam = params.id;
-  const workspaceId =
-    typeof workspaceIdParam === "string"
-      ? Number.parseInt(workspaceIdParam, 10)
-      : Array.isArray(workspaceIdParam)
-        ? Number.parseInt(workspaceIdParam[0] ?? "", 10)
-        : Number.NaN;
-
-  const [sessionOk, setSessionOk] = useState(false);
-  const [user] = useLocalStorage<AuthUser | null>({
-    key: USER_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [token] = useLocalStorage<string | null>({
-    key: TOKEN_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedOrgId] = useLocalStorage<string | null>({
-    key: SELECTED_ORG_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedWorkspaceId] = useLocalStorage<number | null>({
-    key: SELECTED_WORKSPACE_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
 
   const searchParams = useSearchParams();
   const [disconnectError, setDisconnectError] = useState<string | null>(null);
@@ -79,37 +52,12 @@ export default function WorkspaceIntegrationsPage() {
     if (connected) setIgSuccess(true);
     if (err != null && err !== "") setIgConnectError(err);
 
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("instagram_connected");
-    params.delete("instagram_error");
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("instagram_connected");
+    next.delete("instagram_error");
     const base = `/workspaces/${workspaceId}/integrations`;
-    router.replace(params.toString() ? `${base}?${params.toString()}` : base, { scroll: false });
+    router.replace(next.toString() ? `${base}?${next.toString()}` : base, { scroll: false });
   }, [workspaceId, router, searchParams]);
-
-  useEffect(() => {
-    const { user: stored } = readStoredAuth();
-    if (!stored) {
-      router.replace("/chat");
-      return;
-    }
-    setSessionOk(true);
-  }, [router]);
-
-  const orgId = selectedOrgId != null ? String(selectedOrgId) : null;
-
-  const { data: workspaces, isPending: wsPending } = useQuery({
-    queryKey: ["workspaces", token, orgId],
-    queryFn: () => fetchWorkspaces(token!, orgId!),
-    enabled: Boolean(token) && sessionOk && orgId != null,
-    staleTime: 30_000,
-  });
-
-  const workspace = useMemo(() => {
-    if (!workspaces?.length || Number.isNaN(workspaceId)) {
-      return null;
-    }
-    return workspaces.find((w) => w.id === workspaceId) ?? null;
-  }, [workspaces, workspaceId]);
 
   const {
     data: integrations,
@@ -118,7 +66,7 @@ export default function WorkspaceIntegrationsPage() {
   } = useQuery({
     queryKey: ["workspace-integrations", token, orgId, workspaceId],
     queryFn: () => fetchWorkspaceIntegrations(token!, orgId!, workspaceId),
-    enabled: Boolean(token) && sessionOk && orgId != null && !Number.isNaN(workspaceId) && Boolean(workspace),
+    enabled: workspaceReady,
     staleTime: 15_000,
   });
 
@@ -141,10 +89,6 @@ export default function WorkspaceIntegrationsPage() {
     onSuccess: async () => { setDisconnectError(null); await invalidateIntegrations(); },
     onError: (err: Error) => { setDisconnectError(err.message); },
   });
-
-  const displayUser = user ?? readStoredAuth().user;
-  const workspaceMismatch =
-    selectedWorkspaceId != null && selectedWorkspaceId !== workspaceId && !Number.isNaN(workspaceId);
 
   if (!sessionOk || !displayUser) {
     return (

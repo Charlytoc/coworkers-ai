@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ActionIcon,
@@ -23,16 +22,8 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { useDisclosure, useLocalStorage } from "@mantine/hooks";
-import {
-  SELECTED_ORG_ID_KEY,
-  SELECTED_WORKSPACE_ID_KEY,
-  TOKEN_KEY,
-  USER_KEY,
-  readStoredAuth,
-  type AuthUser,
-} from "@/lib/auth-storage";
-import { fetchWorkspaces } from "@/lib/my-workspaces";
+import { useDisclosure } from "@mantine/hooks";
+import { useWorkspacePage } from "@/hooks/use-workspace-page";
 import { fetchWorkspaceIntegrations } from "@/lib/workspace-integrations";
 import { fetchCyberIdentities } from "@/lib/workspace-cyber-identities";
 import { IntegrationActionsTriggersEditor } from "@/components/job-assignments/integration-actions-triggers-editor";
@@ -42,71 +33,28 @@ import {
   buildTriggersPayload,
   createJobAssignment,
   deleteJobAssignment,
+  directDmRecipientsValidationError,
   fetchJobAssignments,
   fetchWorkspaceActionables,
   updateJobAssignment,
   type JobAssignment,
+  type JobAssignmentActionDirectRecipient,
 } from "@/lib/workspace-job-assignments";
 
 export default function WorkspaceJobAssignmentsPage() {
-  const router = useRouter();
   const queryClient = useQueryClient();
-  const params = useParams();
-  const workspaceIdParam = params.id;
-  const workspaceId =
-    typeof workspaceIdParam === "string"
-      ? Number.parseInt(workspaceIdParam, 10)
-      : Array.isArray(workspaceIdParam)
-        ? Number.parseInt(workspaceIdParam[0] ?? "", 10)
-        : Number.NaN;
-
-  const [sessionOk, setSessionOk] = useState(false);
-  const [user] = useLocalStorage<AuthUser | null>({
-    key: USER_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [token] = useLocalStorage<string | null>({
-    key: TOKEN_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedOrgId] = useLocalStorage<string | null>({
-    key: SELECTED_ORG_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedWorkspaceId] = useLocalStorage<number | null>({
-    key: SELECTED_WORKSPACE_ID_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-
-  useEffect(() => {
-    const { user: stored } = readStoredAuth();
-    if (!stored) {
-      router.replace("/chat");
-      return;
-    }
-    setSessionOk(true);
-  }, [router]);
-
-  const orgId = selectedOrgId != null ? String(selectedOrgId) : null;
-
-  const { data: workspaces, isPending: wsPending } = useQuery({
-    queryKey: ["workspaces", token, orgId],
-    queryFn: () => fetchWorkspaces(token!, orgId!),
-    enabled: Boolean(token) && sessionOk && orgId != null,
-    staleTime: 30_000,
-  });
-
-  const workspace = useMemo(() => {
-    if (!workspaces?.length || Number.isNaN(workspaceId)) return null;
-    return workspaces.find((w) => w.id === workspaceId) ?? null;
-  }, [workspaces, workspaceId]);
-
-  const baseEnabled =
-    Boolean(token) && sessionOk && orgId != null && !Number.isNaN(workspaceId) && Boolean(workspace);
+  const {
+    workspaceId,
+    token,
+    orgId,
+    sessionOk,
+    displayUser,
+    workspace,
+    workspacesPending: wsPending,
+    workspaceMismatch,
+    workspaceReady: baseEnabled,
+    selectedWorkspaceId,
+  } = useWorkspacePage();
 
   const { data: integrations } = useQuery({
     queryKey: ["workspace-integrations", token, orgId, workspaceId],
@@ -146,11 +94,15 @@ export default function WorkspaceJobAssignmentsPage() {
   const [instructions, setInstructions] = useState("");
   const [selectedIdentityId, setSelectedIdentityId] = useState<string | null>(null);
   const [selectedActionKeys, setSelectedActionKeys] = useState<string[]>([]);
+  const [directDmRecipientsByKey, setDirectDmRecipientsByKey] = useState<
+    Record<string, JobAssignmentActionDirectRecipient[]>
+  >({});
   const [integrationEventSlugs, setIntegrationEventSlugs] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
 
   const closeCreateModal = useCallback(() => {
     setIntegrationEventSlugs([]);
+    setDirectDmRecipientsByKey({});
     closeCreate();
   }, [closeCreate]);
 
@@ -164,7 +116,7 @@ export default function WorkspaceJobAssignmentsPage() {
         selectedIdentityId ? [selectedIdentityId] : [],
         identities ?? [],
       );
-      const actions = buildActionsPayload(selectedActionKeys);
+      const actions = buildActionsPayload(selectedActionKeys, directDmRecipientsByKey);
       return createJobAssignment(token!, orgId!, workspaceId, {
         role_name: roleName.trim(),
         description: description.trim(),
@@ -184,6 +136,7 @@ export default function WorkspaceJobAssignmentsPage() {
       setInstructions("");
       setSelectedIdentityId(null);
       setSelectedActionKeys([]);
+      setDirectDmRecipientsByKey({});
       closeCreateModal();
       invalidate();
     },
@@ -202,12 +155,6 @@ export default function WorkspaceJobAssignmentsPage() {
     onSuccess: () => invalidate(),
   });
 
-  const displayUser = user ?? readStoredAuth().user;
-  const workspaceMismatch =
-    selectedWorkspaceId != null &&
-    selectedWorkspaceId !== workspaceId &&
-    !Number.isNaN(workspaceId);
-
   const identityOptions = useMemo(
     () =>
       (identities ?? []).map((i) => ({
@@ -217,9 +164,14 @@ export default function WorkspaceJobAssignmentsPage() {
     [identities],
   );
 
+  const createDmRecipientsError = useMemo(
+    () => directDmRecipientsValidationError(selectedActionKeys, directDmRecipientsByKey),
+    [selectedActionKeys, directDmRecipientsByKey],
+  );
+
   useEffect(() => {
     if (!identities?.length || selectedIdentityId != null) return;
-    setSelectedIdentityId(identities[0].id);
+    queueMicrotask(() => setSelectedIdentityId(identities[0].id));
   }, [identities, selectedIdentityId]);
 
   if (!sessionOk || !displayUser) {
@@ -529,13 +481,20 @@ export default function WorkspaceJobAssignmentsPage() {
             allowDeselect={false}
             description="Required — the agent runs in the context of this workspace persona."
           />
+          {createDmRecipientsError ? (
+            <Alert color="yellow" title="Direct DM actions">
+              {createDmRecipientsError}
+            </Alert>
+          ) : null}
           <IntegrationActionsTriggersEditor
             actionables={actionables ?? []}
             integrations={integrations ?? []}
             actionKeys={selectedActionKeys}
             integrationEventSlugs={integrationEventSlugs}
+            directDmRecipientsByKey={directDmRecipientsByKey}
             onActionKeysChange={setSelectedActionKeys}
             onIntegrationEventSlugsChange={setIntegrationEventSlugs}
+            onDirectDmRecipientsByKeyChange={setDirectDmRecipientsByKey}
           />
           <Group justify="flex-end" gap="xs">
             <Button variant="default" onClick={closeCreateModal}>
@@ -545,7 +504,10 @@ export default function WorkspaceJobAssignmentsPage() {
               loading={createMutation.isPending}
               onClick={() => createMutation.mutate()}
               disabled={
-                !roleName.trim() || selectedActionKeys.length === 0 || selectedIdentityId == null
+                !roleName.trim() ||
+                  selectedActionKeys.length === 0 ||
+                  selectedIdentityId == null ||
+                  createDmRecipientsError != null
               }
             >
               Create

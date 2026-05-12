@@ -1,5 +1,4 @@
-import { API_BASE_URL } from "@/lib/api-base";
-import { ORGANIZATION_HEADER } from "@/lib/auth-storage";
+import { apiFetch, apiReadJson, throwApiError } from "@/lib/api-request";
 
 export type CyberIdentityType =
   | "influencer"
@@ -39,37 +38,13 @@ export type CyberIdentityCreateInput = {
 
 export type CyberIdentityUpdateInput = Partial<CyberIdentityCreateInput>;
 
-function authHeaders(token: string, organizationId: string, json = false): HeadersInit {
-  const base: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    [ORGANIZATION_HEADER]: organizationId,
-  };
-  if (json) base["Content-Type"] = "application/json";
-  return base;
-}
-
-async function parseError(response: Response, fallback: string): Promise<never> {
-  let message = fallback;
-  try {
-    const body = (await response.json()) as { error?: string };
-    if (body?.error) message = body.error;
-  } catch {
-    // ignore
-  }
-  throw new Error(`${message} (${response.status})`);
-}
-
 export async function fetchCyberIdentities(
   token: string,
   organizationId: string,
   workspaceId: number,
 ): Promise<CyberIdentity[]> {
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/cyber-identities/`,
-    { headers: authHeaders(token, organizationId) },
-  );
-  if (!response.ok) await parseError(response, "Failed to load cyber identities");
-  return response.json() as Promise<CyberIdentity[]>;
+  const response = await apiFetch(`/workspaces/${workspaceId}/cyber-identities/`, token, organizationId);
+  return apiReadJson<CyberIdentity[]>(response, "Failed to load cyber identities");
 }
 
 export async function createCyberIdentity(
@@ -78,16 +53,11 @@ export async function createCyberIdentity(
   workspaceId: number,
   input: CyberIdentityCreateInput,
 ): Promise<CyberIdentity> {
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/cyber-identities/`,
-    {
-      method: "POST",
-      headers: authHeaders(token, organizationId, true),
-      body: JSON.stringify(input),
-    },
-  );
-  if (!response.ok) await parseError(response, "Failed to create cyber identity");
-  return response.json() as Promise<CyberIdentity>;
+  const response = await apiFetch(`/workspaces/${workspaceId}/cyber-identities/`, token, organizationId, {
+    method: "POST",
+    jsonBody: input,
+  });
+  return apiReadJson<CyberIdentity>(response, "Failed to create cyber identity");
 }
 
 export async function updateCyberIdentity(
@@ -97,16 +67,16 @@ export async function updateCyberIdentity(
   cyberIdentityId: string,
   input: CyberIdentityUpdateInput,
 ): Promise<CyberIdentity> {
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/cyber-identities/${cyberIdentityId}/`,
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/cyber-identities/${cyberIdentityId}/`,
+    token,
+    organizationId,
     {
       method: "PATCH",
-      headers: authHeaders(token, organizationId, true),
-      body: JSON.stringify(input),
+      jsonBody: input,
     },
   );
-  if (!response.ok) await parseError(response, "Failed to update cyber identity");
-  return response.json() as Promise<CyberIdentity>;
+  return apiReadJson<CyberIdentity>(response, "Failed to update cyber identity");
 }
 
 export async function deleteCyberIdentity(
@@ -115,14 +85,15 @@ export async function deleteCyberIdentity(
   workspaceId: number,
   cyberIdentityId: string,
 ): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/workspaces/${workspaceId}/cyber-identities/${cyberIdentityId}/`,
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/cyber-identities/${cyberIdentityId}/`,
+    token,
+    organizationId,
     {
       method: "DELETE",
-      headers: authHeaders(token, organizationId),
     },
   );
   if (!response.ok && response.status !== 204) {
-    await parseError(response, "Failed to delete cyber identity");
+    await throwApiError(response, "Failed to delete cyber identity");
   }
 }
