@@ -27,7 +27,7 @@ class WorkspaceMember(TimeStampedModel):
     )
     role = models.ForeignKey(
         Role,
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         related_name="workspace_members",
     )
     status = models.CharField(

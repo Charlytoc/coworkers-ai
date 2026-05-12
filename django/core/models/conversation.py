@@ -57,7 +57,7 @@ class Conversation(TimeStampedModel):
     )
     cyber_identity = models.ForeignKey(
         CyberIdentity,
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         related_name="conversations",
         help_text="Persona on our side that speaks in this conversation.",
     )
