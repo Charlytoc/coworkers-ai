@@ -40,6 +40,7 @@ class JobTaskProcessorAgent:
         conversation: Conversation,
         task_execution: TaskExecution | None = None,
         actions_override: list[JobAssignmentAction] | None = None,
+        task_trigger_type: str = "",
     ) -> list[AgentToolConfig]:
         """Build tool list for an agent run bound to a ``Conversation``.
 
@@ -54,6 +55,7 @@ class JobTaskProcessorAgent:
             channel=channel,
             task_execution=task_execution,
             actions_override=actions_override,
+            task_trigger_type=task_trigger_type,
         )
 
     @staticmethod
@@ -64,6 +66,7 @@ class JobTaskProcessorAgent:
         channel: Channel | None,
         task_execution: TaskExecution | None = None,
         actions_override: list[JobAssignmentAction] | None = None,
+        task_trigger_type: str = "",
     ) -> list[AgentToolConfig]:
         cfg_model = job.get_config()
         actions = actions_override if actions_override is not None else cfg_model.actions
@@ -76,29 +79,31 @@ class JobTaskProcessorAgent:
             seen_names.add(cfg.tool.name)
             tools.append(cfg)
 
-        dm_targets = collect_resolved_send_targets(
-            job=job,
-            conversation=conversation,
-            actions=actions,
-        )
-        reply_like = [t for t in dm_targets if t.target_kind != "direct"]
-        direct_only = [t for t in dm_targets if t.target_kind == "direct"]
-        if reply_like:
-            _add(
-                make_send_message_tool(
-                    targets=reindex_send_targets(reply_like),
-                    conversation_for_append=conversation,
-                )
+        skip_send_tools = task_trigger_type == "artifact_creator"
+        if not skip_send_tools:
+            dm_targets = collect_resolved_send_targets(
+                job=job,
+                conversation=conversation,
+                actions=actions,
             )
-        identity = JobTaskProcessorAgent.primary_identity_for_job(job)
-        if direct_only and identity is not None:
-            _add(
-                make_send_direct_message_tool(
-                    targets=reindex_send_targets(direct_only),
-                    cyber_identity=identity,
-                    conversation_for_append=conversation,
+            reply_like = [t for t in dm_targets if t.target_kind != "direct"]
+            direct_only = [t for t in dm_targets if t.target_kind == "direct"]
+            if reply_like:
+                _add(
+                    make_send_message_tool(
+                        targets=reindex_send_targets(reply_like),
+                        conversation_for_append=conversation,
+                    )
                 )
-            )
+            identity = JobTaskProcessorAgent.primary_identity_for_job(job)
+            if direct_only and identity is not None:
+                _add(
+                    make_send_direct_message_tool(
+                        targets=reindex_send_targets(direct_only),
+                        cyber_identity=identity,
+                        conversation_for_append=conversation,
+                    )
+                )
 
         publish_actions = [
             act
@@ -141,7 +146,8 @@ class JobTaskProcessorAgent:
                 "- This job has Instagram publishing rights. If the user asks you to create or publish "
                 "an Instagram post, call `call_artifact_creator` and include explicit instructions for "
                 "the child task to create the required assets and call `publish_external_resource` with "
-                "`resource_type: \"instagram.post\"`."
+                "`resource_type: \"instagram.post\"`. After the child finishes, you will run again to "
+                "notify the user."
             )
         if not lines:
             return None

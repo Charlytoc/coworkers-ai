@@ -22,13 +22,13 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { useWorkspacePage } from "@/hooks/use-workspace-page";
 import {
+  artifactPreviewImageUrl,
   artifactTextBody,
   artifactTitle,
   deleteWorkspaceArtifact,
   fetchWorkspaceArtifact,
   formatArtifactBytes,
   isHtmlTextArtifact,
-  isImageArtifact,
   type WorkspaceArtifact,
 } from "@/lib/workspace-artifacts";
 
@@ -86,7 +86,7 @@ export default function WorkspaceArtifactDetailPage() {
 
   const body = artifact ? artifactTextBody(artifact) : null;
   const htmlArtifact = artifact ? isHtmlTextArtifact(artifact) : false;
-  const imageArtifact = artifact ? isImageArtifact(artifact) : false;
+  const previewImageUrl = artifact ? artifactPreviewImageUrl(artifact) : null;
 
   useEffect(() => {
     if (!htmlArtifact || !body) return;
@@ -285,10 +285,10 @@ export default function WorkspaceArtifactDetailPage() {
                       Open integration
                     </Button>
                   ) : null}
-                  {artifact.media?.public_url ? (
+                  {artifact.media?.public_url || previewImageUrl ? (
                     <Button
                       component="a"
-                      href={artifact.media.public_url}
+                      href={artifact.media?.public_url ?? previewImageUrl ?? ""}
                       target="_blank"
                       rel="noopener noreferrer"
                       variant="subtle"
@@ -301,11 +301,11 @@ export default function WorkspaceArtifactDetailPage() {
               </Stack>
             </Paper>
 
-            {imageArtifact && artifact.media?.public_url ? (
+            {previewImageUrl ? (
               <Paper withBorder radius="md" p="md">
                 <Box
                   component="img"
-                  src={artifact.media.public_url}
+                  src={previewImageUrl}
                   alt={artifactTitle(artifact)}
                   style={{
                     display: "block",
@@ -351,7 +351,7 @@ export default function WorkspaceArtifactDetailPage() {
               </Paper>
             ) : null}
 
-            {!body && !imageArtifact ? (
+            {!body && !previewImageUrl ? (
               <Paper withBorder radius="md" p="md">
                 <Text size="sm" c="dimmed">
                   No text or image preview for this artifact.

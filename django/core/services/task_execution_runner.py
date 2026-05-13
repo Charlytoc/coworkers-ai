@@ -124,6 +124,7 @@ def run_task_execution(task_execution_id: str, celery_task_id: str | None = None
         conversation=conversation,
         task_execution=task,
         actions_override=prepared.actions_override,
+        task_trigger_type=trigger_type,
     )
     if not tools:
         return _fail(task, "no_tools_available_for_task")

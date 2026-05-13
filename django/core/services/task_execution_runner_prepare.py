@@ -54,8 +54,10 @@ def prepare_agent_loop(
                 conversation=conversation,
                 actions_override=actions_override,
             )
-            + "\n\nAn artifact creator task has finished in the background. Review the structured "
-            "artifact data below and notify the user naturally through the appropriate send tool. "
+            + "\n\nAn artifact creator task has finished in the background. The user message above "
+            "includes whether it succeeded or failed and any artifact JSON or error details. "
+            "Notify the user naturally through the appropriate send tool: on success, briefly "
+            "celebrate or summarize what was produced; on failure, apologize and explain. "
             "Do not create new artifacts unless the user explicitly asks for changes."
         )
         return PreparedAgentLoop(loop_messages, system_prompt, actions_override), None
@@ -70,12 +72,13 @@ def prepare_agent_loop(
                 conversation=conversation,
                 actions_override=actions_override,
             )
-            + "\n\nThis run is an artifact creator task. Create durable artifacts that satisfy "
-            "the latest instructions. Prefer saving the useful output through the artifact tools; "
-            "do not treat plain final text as the saved artifact. When you succeed, brief the user "
-            "through `send_message` or `send_direct_message` as listed in the system prompt for this run "
-            "(same rules as the main job); "
-            "only a failed run may trigger a separate parent notification."
+            + "\n\nThis run is an artifact creator task. You do not have send_message or "
+            "send_direct_message here; do not try to notify the user from this run. "
+            "Create durable artifacts that satisfy the latest instructions using the artifact tools "
+            "(and publish_external_resource when publishing to Instagram is in scope). "
+            "Prefer saving useful output through the artifact tools; do not treat plain final text "
+            "as the saved artifact. When you finish, the parent job will run again automatically "
+            "to message the user."
         )
         return PreparedAgentLoop(loop_messages, system_prompt, actions_override), None
 

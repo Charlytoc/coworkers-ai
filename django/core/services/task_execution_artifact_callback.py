@@ -1,9 +1,10 @@
-"""Queue parent job notification when an artifact-creator child task fails."""
+"""Queue a parent job agent run after an artifact-creator child task finishes."""
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from django.db import transaction
 
@@ -18,6 +19,7 @@ def enqueue_artifact_creator_callback(
     *,
     task: TaskExecution,
     inputs: TaskExecutionInputs,
+    status: Literal["completed", "failed"],
     error_message: str | None = None,
 ) -> TaskExecution | None:
     if inputs.channel is None or inputs.parent_job_assignment is None:
@@ -42,7 +44,9 @@ def enqueue_artifact_creator_callback(
     artifacts = artifact_callback_payload(task)
     task_instructions = artifact_callback_instructions(
         task=task,
+        status=status,
         error_message=error_message,
+        artifacts=artifacts,
     )
 
     parent_cfg = parent_job.get_config()
@@ -59,14 +63,14 @@ def enqueue_artifact_creator_callback(
         trigger={
             "type": "artifact_creator_completed",
             "artifact_task_execution_id": str(task.id),
-            "status": "failed",
+            "status": status,
             "artifact_ids": [a["id"] for a in artifacts],
         },
         variables={
             "artifact_creator": {
                 "task_execution_id": str(task.id),
                 "name": task.name or "",
-                "status": "failed",
+                "status": status,
                 "error_message": error_message or "",
             },
             "artifacts": artifacts,
@@ -153,13 +157,26 @@ def artifact_callback_payload(task: TaskExecution) -> list[dict[str, Any]]:
 def artifact_callback_instructions(
     *,
     task: TaskExecution,
+    status: Literal["completed", "failed"],
     error_message: str | None,
+    artifacts: list[dict[str, Any]],
 ) -> str:
+    if status == "failed":
+        return "\n".join(
+            [
+                "The background artifact creator failed.",
+                f"Artifact task: {task.name or task.id}",
+                f"Error: {error_message or 'unknown error'}",
+                "Apologize briefly to the user and explain that the work could not be completed.",
+            ]
+        )
+    payload = json.dumps({"artifacts": artifacts}, indent=2, default=str)
     return "\n".join(
         [
-            "The background artifact creator failed.",
+            "The background artifact creator finished successfully.",
             f"Artifact task: {task.name or task.id}",
-            f"Error: {error_message or 'unknown error'}",
-            "Apologize briefly to the user and explain that the artifact could not be created.",
+            "Structured artifact summary (JSON):",
+            payload,
+            "Summarize what was produced for the user in a short, friendly message and send it using the appropriate send tool.",
         ]
     )

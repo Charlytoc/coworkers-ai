@@ -24,10 +24,47 @@ export function artifactTitle(row: WorkspaceArtifact): string {
 }
 
 export function artifactTextBody(row: WorkspaceArtifact): string | null {
+  if (row.kind === "external_resource") {
+    const caption = row.metadata.caption;
+    if (typeof caption === "string" && caption.trim()) return caption.trim();
+    return null;
+  }
   const text = row.metadata.text;
   if (typeof text === "string" && text.trim()) return text.trim();
   const summary = row.metadata.summary;
   if (typeof summary === "string" && summary.trim()) return summary.trim();
+  return null;
+}
+
+function isHttpUrl(value: string): boolean {
+  return value.startsWith("http://") || value.startsWith("https://");
+}
+
+function externalResourceAttachmentImageUrl(metadata: WorkspaceArtifact["metadata"]): string | null {
+  const raw = metadata.attachments;
+  if (!Array.isArray(raw)) return null;
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const att = item as Record<string, unknown>;
+    if (att.kind !== "image" && att.type !== "image") continue;
+    const media = att.media;
+    if (!media || typeof media !== "object") continue;
+    const url = (media as Record<string, unknown>).public_url;
+    if (typeof url === "string" && url.trim() && isHttpUrl(url.trim())) return url.trim();
+  }
+  return null;
+}
+
+export function artifactPreviewImageUrl(row: WorkspaceArtifact): string | null {
+  if (
+    row.media?.public_url &&
+    (row.kind === "image" || row.media.mime_type.startsWith("image/"))
+  ) {
+    return row.media.public_url;
+  }
+  if (row.kind === "external_resource") {
+    return externalResourceAttachmentImageUrl(row.metadata);
+  }
   return null;
 }
 

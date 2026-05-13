@@ -28,13 +28,13 @@ import { fetchWorkspaceIntegrations } from "@/lib/workspace-integrations";
 import { fetchJobAssignments } from "@/lib/workspace-job-assignments";
 import {
   ARTIFACT_KIND_OPTIONS,
+  artifactPreviewImageUrl,
   artifactTextBody,
   artifactTitle,
   deleteWorkspaceArtifact,
   fetchWorkspaceArtifacts,
   formatArtifactBytes,
   isHtmlTextArtifact,
-  isImageArtifact,
   type ArtifactKind,
   type WorkspaceArtifact,
 } from "@/lib/workspace-artifacts";
@@ -331,11 +331,12 @@ export default function WorkspaceArtifactsPage() {
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
             {artifacts.map((row) => {
               const preview = artifactTextBody(row);
+              const previewImageUrl = artifactPreviewImageUrl(row);
               const mediaMeta = row.media
                 ? [row.media.mime_type, formatArtifactBytes(row.media.byte_size)].filter(Boolean).join(" · ")
                 : "";
-              const showImagePreview = isImageArtifact(row);
               const showHtmlPreview = isHtmlTextArtifact(row) && preview;
+              const hasInlinePreview = Boolean(preview || previewImageUrl);
               return (
                 <Card key={row.id} withBorder radius="md" p="lg">
                   <Stack gap="sm">
@@ -361,39 +362,45 @@ export default function WorkspaceArtifactsPage() {
                       </ActionIcon>
                     </Group>
 
-                    {preview ? (
+                    {hasInlinePreview ? (
                       <Paper withBorder radius="sm" p="sm" bg="var(--mantine-color-gray-light)">
                         <Stack gap="xs">
-                          <Box
-                            h={ARTIFACT_CARD_PREVIEW_PX}
-                            w="100%"
-                            style={{
-                              overflow: "hidden",
-                              borderRadius: 8,
-                              border: "1px solid var(--mantine-color-default-border)",
-                              background: "var(--mantine-color-body)",
-                            }}
-                          >
-                            {showHtmlPreview ? (
+                          {previewImageUrl ? (
+                            <Box
+                              h={ARTIFACT_CARD_PREVIEW_PX}
+                              w="100%"
+                              style={{
+                                overflow: "hidden",
+                                borderRadius: 8,
+                                border: "1px solid var(--mantine-color-default-border)",
+                                background: "var(--mantine-color-body)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
                               <Box
-                                component="iframe"
-                                srcDoc={preview}
-                                sandbox=""
-                                title={artifactTitle(row)}
+                                component="img"
+                                src={previewImageUrl}
+                                alt={artifactTitle(row)}
                                 style={{
                                   display: "block",
                                   width: "100%",
                                   height: "100%",
-                                  border: 0,
-                                  background: "white",
+                                  objectFit: "contain",
                                 }}
                               />
-                            ) : (
+                            </Box>
+                          ) : null}
+                          {preview ? (
+                            previewImageUrl ? (
                               <Box
-                                h="100%"
+                                mah={200}
                                 p="sm"
                                 style={{
                                   overflow: "auto",
+                                  borderRadius: 8,
+                                  border: "1px solid var(--mantine-color-default-border)",
                                   background: "var(--mantine-color-gray-light)",
                                 }}
                               >
@@ -401,8 +408,48 @@ export default function WorkspaceArtifactsPage() {
                                   {preview}
                                 </Text>
                               </Box>
-                            )}
-                          </Box>
+                            ) : (
+                              <Box
+                                h={ARTIFACT_CARD_PREVIEW_PX}
+                                w="100%"
+                                style={{
+                                  overflow: "hidden",
+                                  borderRadius: 8,
+                                  border: "1px solid var(--mantine-color-default-border)",
+                                  background: "var(--mantine-color-body)",
+                                }}
+                              >
+                                {showHtmlPreview ? (
+                                  <Box
+                                    component="iframe"
+                                    srcDoc={preview}
+                                    sandbox=""
+                                    title={artifactTitle(row)}
+                                    style={{
+                                      display: "block",
+                                      width: "100%",
+                                      height: "100%",
+                                      border: 0,
+                                      background: "white",
+                                    }}
+                                  />
+                                ) : (
+                                  <Box
+                                    h="100%"
+                                    p="sm"
+                                    style={{
+                                      overflow: "auto",
+                                      background: "var(--mantine-color-gray-light)",
+                                    }}
+                                  >
+                                    <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                                      {preview}
+                                    </Text>
+                                  </Box>
+                                )}
+                              </Box>
+                            )
+                          ) : null}
                           <Button
                             component={Link}
                             href={`/workspaces/${workspaceId}/artifacts/${row.id}`}
@@ -430,10 +477,10 @@ export default function WorkspaceArtifactsPage() {
                               justifyContent: "center",
                             }}
                           >
-                            {showImagePreview ? (
+                            {previewImageUrl ? (
                               <Box
                                 component="img"
-                                src={row.media.public_url!}
+                                src={previewImageUrl}
                                 alt={artifactTitle(row)}
                                 style={{
                                   display: "block",

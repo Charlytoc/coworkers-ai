@@ -68,11 +68,12 @@ def persist_successful_agent_run(
     task.completed_at = datetime.now(timezone.utc)
     task.save(update_fields=["status", "outputs", "completed_at", "modified"])
 
-    if trigger_type == "artifact_creator" and summary.error:
+    if trigger_type == "artifact_creator":
         enqueue_artifact_creator_callback(
             task=task,
             inputs=inputs,
-            error_message=summary.error,
+            status="failed" if summary.error else "completed",
+            error_message=summary.error if summary.error else None,
         )
 
     return {
@@ -111,6 +112,7 @@ def persist_failed_agent_run(
         enqueue_artifact_creator_callback(
             task=task,
             inputs=inputs,
+            status="failed",
             error_message=error_message,
         )
     return {"status": "error", "error": error_message}
