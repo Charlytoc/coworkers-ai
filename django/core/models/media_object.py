@@ -164,11 +164,7 @@ class MediaObject(TimeStampedModel):
         url = self.file.url
         if url.startswith(("http://", "https://")):
             return url
-        base = str(
-            getattr(settings, "MEDIA_PUBLIC_URL_BASE", "")
-            or getattr(settings, "SITE_URL", "")
-            or ""
-        ).rstrip("/")
+        base = str(getattr(settings, "SITE_URL", "") or "").rstrip("/")
         if not base:
             return url
         return urljoin(f"{base}/", url.lstrip("/"))

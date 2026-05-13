@@ -11,6 +11,7 @@ import hmac
 import json
 import logging
 import secrets
+import time
 from typing import Any
 from urllib.parse import urlencode
 
@@ -344,6 +345,77 @@ def instagram_create_image_media_container(
     return data
 
 
+def instagram_get_media_container_status(
+    *, access_token: str, container_id: str
+) -> dict[str, Any]:
+    cid = str(container_id or "").strip()
+    if not access_token or not cid:
+        raise ValueError("Instagram token or container_id not configured")
+    url = f"{INSTAGRAM_GRAPH_BASE}/{INSTAGRAM_GRAPH_API_VERSION}/{cid}"
+    resp = requests.get(
+        url,
+        params={"fields": "status_code", "access_token": access_token},
+        timeout=30,
+    )
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        logger.warning(
+            "instagram media container status invalid_json status=%s body_preview=%r",
+            resp.status_code,
+            resp.text[:1000],
+        )
+        raise ValueError("Instagram container status returned invalid JSON") from exc
+    if "error" in data:
+        raise ValueError(_instagram_graph_error_message(data, "Instagram container status failed"))
+    return data
+
+
+def instagram_wait_for_media_container_ready_for_publish(
+    *,
+    access_token: str,
+    container_id: str,
+    max_attempts: int = 40,
+    interval_seconds: float = 3.0,
+) -> str:
+    """Poll ``status_code`` until Meta marks the container ready for ``media_publish``.
+
+    Without this, ``media_publish`` often returns OAuthException 9007 (subcode 2207027)
+    when the image URL was just ingested and processing has not finished yet.
+    """
+    cid = str(container_id or "").strip()
+    last_status = ""
+    for attempt in range(1, max_attempts + 1):
+        data = instagram_get_media_container_status(access_token=access_token, container_id=cid)
+        raw = data.get("status_code")
+        last_status = str(raw).strip().upper() if raw is not None else ""
+        if last_status == "FINISHED":
+            logger.info(
+                "instagram media container ready container_id=%s status=%s attempt=%s",
+                cid,
+                last_status,
+                attempt,
+            )
+            return last_status
+        if last_status in ("ERROR", "EXPIRED"):
+            raise ValueError(
+                f"Instagram media container {cid} failed: status_code={last_status}"
+            )
+        logger.info(
+            "instagram media container pending container_id=%s status=%r attempt=%s/%s",
+            cid,
+            raw,
+            attempt,
+            max_attempts,
+        )
+        if attempt < max_attempts:
+            time.sleep(interval_seconds)
+    raise ValueError(
+        f"Instagram media container {cid} not ready after {max_attempts} polls "
+        f"(~{max_attempts * interval_seconds:.0f}s); last status_code={last_status!r}"
+    )
+
+
 def instagram_publish_media_container(
     *,
     access_token: str,
@@ -411,10 +483,15 @@ def instagram_publish_image_post(
         image_url=image_url,
         caption=caption,
     )
+    creation_id = str(container["id"])
+    instagram_wait_for_media_container_ready_for_publish(
+        access_token=access_token,
+        container_id=creation_id,
+    )
     published = instagram_publish_media_container(
         access_token=access_token,
         ig_user_id=ig_user_id,
-        creation_id=str(container["id"]),
+        creation_id=creation_id,
     )
     return {"container": container, "published": published}
 
@@ -1223,6 +1300,10 @@ class InstagramIntegrationService:
         instagram_create_image_media_container
     )
     instagram_publish_media_container = staticmethod(instagram_publish_media_container)
+    instagram_get_media_container_status = staticmethod(instagram_get_media_container_status)
+    instagram_wait_for_media_container_ready_for_publish = staticmethod(
+        instagram_wait_for_media_container_ready_for_publish
+    )
     instagram_publish_image_post = staticmethod(instagram_publish_image_post)
     instagram_enable_webhook_subscriptions = staticmethod(
         instagram_enable_webhook_subscriptions

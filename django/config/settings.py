@@ -188,7 +188,7 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULE = {
     "dispatch-due-task-executions": {
         "task": "core.tasks.task_dispatcher.dispatch_due_task_executions",
-        "schedule": 30.0,
+        "schedule": 60.0,
     },
     "dispatch-due-cron-jobs": {
         "task": "core.tasks.task_dispatcher.dispatch_due_cron_jobs",
