@@ -105,6 +105,114 @@ def _ensure_default_identity(*, workspace, user) -> CyberIdentity:
     return identity
 
 
+def build_telegram_default_job_config(
+    *, account: IntegrationAccount, identity: CyberIdentity
+) -> JobAssignmentConfig:
+    return JobAssignmentConfig(
+        accounts=[
+            JobAssignmentConfigAccount(id=account.id, provider=account.provider),
+        ],
+        identities=[
+            JobAssignmentConfigIdentity(
+                id=identity.id,
+                type=identity.type,
+                config=identity.config or {},
+            ),
+        ],
+        triggers=[
+            JobAssignmentEventTrigger(
+                type="event",
+                on=TELEGRAM_PRIVATE_MESSAGE.slug,
+                filter={},
+            ),
+        ],
+        actions=[
+            JobAssignmentAction(
+                actionable_slug=TELEGRAM_REPLY_DM.slug,
+                integration_account_id=account.id,
+            ),
+            JobAssignmentAction(
+                actionable_slug=TASKS_SCHEDULE_ONE_OFF.slug,
+                integration_account_id=None,
+            ),
+            JobAssignmentAction(
+                actionable_slug=TASKS_CREATE_RECURRING_JOB.slug,
+                integration_account_id=None,
+            ),
+        ],
+    )
+
+
+def build_instagram_default_job_config(
+    *, account: IntegrationAccount, identity: CyberIdentity
+) -> JobAssignmentConfig:
+    return JobAssignmentConfig(
+        accounts=[
+            JobAssignmentConfigAccount(id=account.id, provider=account.provider),
+        ],
+        identities=[
+            JobAssignmentConfigIdentity(
+                id=identity.id,
+                type=identity.type,
+                config=identity.config or {},
+            ),
+        ],
+        triggers=[
+            JobAssignmentEventTrigger(
+                type="event",
+                on=INSTAGRAM_DM_MESSAGE.slug,
+                filter={},
+            ),
+        ],
+        actions=[
+            JobAssignmentAction(
+                actionable_slug=INSTAGRAM_REPLY_DM.slug,
+                integration_account_id=account.id,
+            ),
+            JobAssignmentAction(
+                actionable_slug=INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE.slug,
+                integration_account_id=account.id,
+            ),
+            JobAssignmentAction(
+                actionable_slug=TASKS_SCHEDULE_ONE_OFF.slug,
+                integration_account_id=None,
+            ),
+            JobAssignmentAction(
+                actionable_slug=TASKS_CREATE_RECURRING_JOB.slug,
+                integration_account_id=None,
+            ),
+        ],
+    )
+
+
+def create_default_dm_job_for_account(
+    *,
+    account: IntegrationAccount,
+    identity: CyberIdentity,
+    role_name: str,
+    description: str,
+    instructions: str,
+    enabled: bool = True,
+) -> JobAssignment:
+    if account.provider == IntegrationAccount.Provider.TELEGRAM:
+        cfg = build_telegram_default_job_config(account=account, identity=identity)
+    elif account.provider == IntegrationAccount.Provider.INSTAGRAM:
+        cfg = build_instagram_default_job_config(account=account, identity=identity)
+    else:
+        raise ValueError(f"unsupported provider for default DM job: {account.provider!r}")
+    workspace = account.workspace
+    job = JobAssignment(
+        workspace=workspace,
+        role_name=role_name[:200],
+        description=description,
+        instructions=instructions,
+        enabled=enabled,
+    )
+    job.set_config(cfg)
+    job.save()
+    return job
+
+
 def _has_existing_job_for_telegram_account(account: IntegrationAccount) -> bool:
     """True if any enabled job already targets this Telegram account with ``telegram.reply_dm``."""
     for job in JobAssignment.objects.filter(workspace=account.workspace).iterator():
@@ -140,50 +248,15 @@ def ensure_default_job_assignment_for_telegram(
     workspace = account.workspace
     identity = _ensure_default_identity(workspace=workspace, user=user)
 
-    cfg = JobAssignmentConfig(
-        accounts=[
-            JobAssignmentConfigAccount(id=account.id, provider=account.provider),
-        ],
-        identities=[
-            JobAssignmentConfigIdentity(
-                id=identity.id,
-                type=identity.type,
-                config=identity.config or {},
-            ),
-        ],
-        triggers=[
-            JobAssignmentEventTrigger(
-                type="event",
-                on=TELEGRAM_PRIVATE_MESSAGE.slug,
-                filter={},
-            ),
-        ],
-        actions=[
-            JobAssignmentAction(
-                actionable_slug=TELEGRAM_REPLY_DM.slug,
-                integration_account_id=account.id,
-            ),
-            JobAssignmentAction(
-                actionable_slug=TASKS_SCHEDULE_ONE_OFF.slug,
-                integration_account_id=None,
-            ),
-            JobAssignmentAction(
-                actionable_slug=TASKS_CREATE_RECURRING_JOB.slug,
-                integration_account_id=None,
-            ),
-        ],
-    )
-
     with transaction.atomic():
-        job = JobAssignment(
-            workspace=workspace,
+        job = create_default_dm_job_for_account(
+            account=account,
+            identity=identity,
             role_name=DEFAULT_TELEGRAM_ROLE_NAME,
             description=DEFAULT_TELEGRAM_DESCRIPTION,
             instructions=DEFAULT_TELEGRAM_INSTRUCTIONS,
             enabled=True,
         )
-        job.set_config(cfg)
-        job.save()
 
     logger.info(
         "job_assignment_defaults: created default job=%s account=%s identity=%s workspace=%s",
@@ -275,54 +348,15 @@ def ensure_default_job_assignment_for_instagram(
     workspace = account.workspace
     identity = _ensure_default_identity(workspace=workspace, user=user)
 
-    cfg = JobAssignmentConfig(
-        accounts=[
-            JobAssignmentConfigAccount(id=account.id, provider=account.provider),
-        ],
-        identities=[
-            JobAssignmentConfigIdentity(
-                id=identity.id,
-                type=identity.type,
-                config=identity.config or {},
-            ),
-        ],
-        triggers=[
-            JobAssignmentEventTrigger(
-                type="event",
-                on=INSTAGRAM_DM_MESSAGE.slug,
-                filter={},
-            ),
-        ],
-        actions=[
-            JobAssignmentAction(
-                actionable_slug=INSTAGRAM_REPLY_DM.slug,
-                integration_account_id=account.id,
-            ),
-            JobAssignmentAction(
-                actionable_slug=INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE.slug,
-                integration_account_id=account.id,
-            ),
-            JobAssignmentAction(
-                actionable_slug=TASKS_SCHEDULE_ONE_OFF.slug,
-                integration_account_id=None,
-            ),
-            JobAssignmentAction(
-                actionable_slug=TASKS_CREATE_RECURRING_JOB.slug,
-                integration_account_id=None,
-            ),
-        ],
-    )
-
     with transaction.atomic():
-        job = JobAssignment(
-            workspace=workspace,
+        job = create_default_dm_job_for_account(
+            account=account,
+            identity=identity,
             role_name=DEFAULT_INSTAGRAM_ROLE_NAME,
             description=DEFAULT_INSTAGRAM_DESCRIPTION,
             instructions=DEFAULT_INSTAGRAM_INSTRUCTIONS,
             enabled=True,
         )
-        job.set_config(cfg)
-        job.save()
 
     logger.info(
         "job_assignment_defaults: created default instagram job=%s account=%s identity=%s workspace=%s",

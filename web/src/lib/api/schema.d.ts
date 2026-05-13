@@ -496,10 +496,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Instagram Oauth Url */
-        get: operations["core_routers_integrations_instagram_instagram_oauth_url"];
+        get?: never;
         put?: never;
-        post?: never;
+        /** Instagram Oauth Url */
+        post: operations["core_routers_integrations_instagram_instagram_oauth_url"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1128,6 +1128,13 @@ export interface components {
             bot_token: string;
             /** Display Name */
             display_name?: string | null;
+            /**
+             * Cyber Identity Id
+             * Format: uuid
+             */
+            cyber_identity_id: string;
+            /** Use Case */
+            use_case: string;
         };
         /** TelegramApproveResponse */
         TelegramApproveResponse: {
@@ -1148,6 +1155,16 @@ export interface components {
         InstagramOAuthUrlResponse: {
             /** Oauth Url */
             oauth_url: string;
+        };
+        /** InstagramOAuthInitRequest */
+        InstagramOAuthInitRequest: {
+            /**
+             * Cyber Identity Id
+             * Format: uuid
+             */
+            cyber_identity_id: string;
+            /** Use Case */
+            use_case: string;
         };
         /** _CallbackParams */
         _CallbackParams: {
@@ -2826,7 +2843,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstagramOAuthInitRequest"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -2835,6 +2856,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstagramOAuthUrlResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
                 };
             };
             /** @description Unauthorized */

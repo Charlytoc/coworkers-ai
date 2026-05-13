@@ -1,3 +1,4 @@
 from .instagram_dm import process_instagram_webhook_messaging_task
+from .integration_onboarding import provision_integration_default_job
 from .task_dispatcher import dispatch_due_cron_jobs, dispatch_due_task_executions
 from .task_execution import run_task_execution

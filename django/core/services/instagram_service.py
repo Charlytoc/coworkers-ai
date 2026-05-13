@@ -22,6 +22,10 @@ from django.http import HttpRequest
 
 from core.integrations.event_types import INSTAGRAM_DM_MESSAGE
 from core.models import IntegrationAccount, IntegrationEvent, Workspace
+from core.schemas.integration_account import (
+    INTEGRATION_ONBOARDING_CONFIG_KEY,
+    IntegrationAccountOnboarding,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,18 +98,29 @@ def _state_cache_key(state_token: str) -> str:
     return f"{_OAUTH_STATE_PREFIX}{state_token}"
 
 
-def store_oauth_state(workspace_id: int, user_id: int) -> str:
-    """Generate a random state token, store workspace/user in cache, return the token."""
+def store_oauth_state(
+    *,
+    workspace_id: int,
+    user_id: int,
+    cyber_identity_id: str,
+    use_case: str,
+) -> str:
+    """Generate a random state token, store workspace/user/onboarding in cache, return the token."""
     token = secrets.token_urlsafe(32)
     cache.set(
         _state_cache_key(token),
-        {"workspace_id": workspace_id, "user_id": user_id},
+        {
+            "workspace_id": workspace_id,
+            "user_id": user_id,
+            "cyber_identity_id": cyber_identity_id,
+            "use_case": use_case,
+        },
         _OAUTH_STATE_TTL,
     )
     return token
 
 
-def consume_oauth_state(state_token: str) -> dict[str, int] | None:
+def consume_oauth_state(state_token: str) -> dict[str, object] | None:
     """Retrieve and delete the OAuth state payload. Returns None if missing/expired."""
     key = _state_cache_key(state_token)
     payload = cache.get(key)
@@ -677,6 +692,7 @@ def connect_instagram_account(
     ig_user_id: str,
     ig_username: str,
     ig_oauth_graph_me_id: str | None = None,
+    onboarding: IntegrationAccountOnboarding | None = None,
 ) -> IntegrationAccount:
     """Create or update an IntegrationAccount for a connected Instagram Business account."""
     uid = getattr(user, "pk", None)
@@ -696,6 +712,8 @@ def connect_instagram_account(
         }
         if ig_oauth_graph_me_id and ig_oauth_graph_me_id != ig_user_id:
             cfg[CONFIG_IG_OAUTH_GRAPH_ME_ID] = ig_oauth_graph_me_id
+        if onboarding is not None:
+            cfg[INTEGRATION_ONBOARDING_CONFIG_KEY] = onboarding.model_dump(mode="json")
         return cfg
 
     with transaction.atomic():
@@ -723,16 +741,17 @@ def connect_instagram_account(
                 not ig_oauth_graph_me_id or ig_oauth_graph_me_id == ig_user_id
             ):
                 cfg.pop(CONFIG_IG_OAUTH_GRAPH_ME_ID, None)
+            if onboarding is not None:
+                cfg[INTEGRATION_ONBOARDING_CONFIG_KEY] = onboarding.model_dump(mode="json")
             account.config = cfg
 
         account.auth = {AUTH_ACCESS_TOKEN: access_token}
         account.save()
 
-        from core.services.job_assignment_defaults import (
-            ensure_default_job_assignment_for_instagram,
-        )
+    if onboarding is not None:
+        from core.tasks.integration_onboarding import provision_integration_default_job
 
-        ensure_default_job_assignment_for_instagram(account=account, user=user)
+        provision_integration_default_job.delay(str(account.id))
 
     logger.info(
         "instagram connect done account_id=%s workspace_id=%s created=%s external_account_id=%s",

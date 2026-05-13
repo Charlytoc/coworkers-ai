@@ -18,11 +18,16 @@ export async function getInstagramOAuthUrl(
   token: string,
   organizationId: string,
   workspaceId: number,
+  body: { cyber_identity_id: string; use_case: string },
 ): Promise<InstagramOAuthUrlResponse> {
   const response = await apiFetch(
     `/integrations/instagram/workspaces/${workspaceId}/instagram/oauth-url`,
     token,
     organizationId,
+    {
+      method: "POST",
+      jsonBody: body,
+    },
   );
   return apiReadJson<InstagramOAuthUrlResponse>(response, "Failed to get Instagram OAuth URL");
 }

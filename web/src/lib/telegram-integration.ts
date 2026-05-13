@@ -9,7 +9,12 @@ export async function connectTelegramBot(
   token: string,
   organizationId: string,
   workspaceId: number,
-  body: { bot_token: string; display_name?: string | null },
+  body: {
+    bot_token: string;
+    display_name?: string | null;
+    cyber_identity_id: string;
+    use_case: string;
+  },
 ): Promise<TelegramConnectResponse> {
   const response = await apiFetch(
     `/integrations/telegram/workspaces/${workspaceId}/telegram/connect`,
@@ -20,6 +25,8 @@ export async function connectTelegramBot(
       jsonBody: {
         bot_token: body.bot_token,
         display_name: body.display_name ?? null,
+        cyber_identity_id: body.cyber_identity_id,
+        use_case: body.use_case,
       },
     },
   );

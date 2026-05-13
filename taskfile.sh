@@ -28,6 +28,7 @@ function help() {
   echo "  down              Stop development environment"
   echo "  down-clean        Stop and clean development environment (removes volumes)"
   echo "  migrate [app migration] Run Django migrations"
+  echo "  test [args ...]   Run Django tests inside the django container (manage.py test)"
   echo "  shell [cmd ...]   Open a shell in the django container (or run a one-off command)"
   echo "  web               Start frontend natively (npm run dev)"
   echo "  tunnel [name] [url] Run Cloudflare tunnel (defaults: coworkers http://localhost:9000)"
@@ -38,6 +39,12 @@ function help() {
   echo "  ./taskfile.sh start --rebuild        # Start backend with rebuild"
   echo "  ./taskfile.sh migrate                # Make and apply migrations"
   echo "  ./taskfile.sh migrate core 0038      # Roll back to specific migration"
+  echo "  ./taskfile.sh test                   # Full test suite"
+  echo "  ./taskfile.sh test core.tests -v 2   # App label + verbosity"
+}
+
+function test() {
+  docker compose -f docker-compose.yml exec django python manage.py test "$@"
 }
 
 function setup-env() {

@@ -11,6 +11,7 @@ from ninja.errors import HttpError
 from ninja.security import django_auth
 
 from core.models import IntegrationAccount, Workspace, WorkspaceMember
+from core.schemas.integration_account import IntegrationAccountOnboarding
 from core.services.auth import ApiKeyAuth, auth_service
 from core.services.instagram_service import (
     _frontend_url,
@@ -25,6 +26,7 @@ from core.services.instagram_service import (
     process_webhook_request,
     store_oauth_state,
 )
+from core.services.integration_account_onboarding import require_cyber_identity_in_workspace
 from core.utils.schemas import ErrorResponseSchema
 
 logger = logging.getLogger(__name__)
@@ -38,6 +40,11 @@ router = Router(tags=["Integrations / Instagram"])
 
 class InstagramOAuthUrlResponse(Schema):
     oauth_url: str
+
+
+class InstagramOAuthInitRequest(Schema):
+    cyber_identity_id: uuid.UUID
+    use_case: str
 
 
 class InstagramConnectedAccount(Schema):
@@ -74,21 +81,34 @@ def _require_workspace(request: HttpRequest, workspace_id: int) -> Workspace:
 # OAuth: initiate
 # ---------------------------------------------------------------------------
 
-@router.get(
+@router.post(
     "/workspaces/{workspace_id}/instagram/oauth-url",
     response={
         200: InstagramOAuthUrlResponse,
+        400: ErrorResponseSchema,
         401: ErrorResponseSchema,
         403: ErrorResponseSchema,
         404: ErrorResponseSchema,
     },
     auth=[ApiKeyAuth(), django_auth],
 )
-def instagram_oauth_url(request: HttpRequest, workspace_id: int):
+def instagram_oauth_url(request: HttpRequest, workspace_id: int, body: InstagramOAuthInitRequest):
     workspace = _require_workspace(request, workspace_id)
     user = auth_service.get_user_from_request(request)
     org = auth_service.get_active_organization(request)
-    state_token = store_oauth_state(workspace_id=workspace.id, user_id=user.pk)
+    try:
+        require_cyber_identity_in_workspace(
+            workspace_id=workspace.id,
+            cyber_identity_id=body.cyber_identity_id,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    state_token = store_oauth_state(
+        workspace_id=workspace.id,
+        user_id=user.pk,
+        cyber_identity_id=str(body.cyber_identity_id),
+        use_case=body.use_case,
+    )
     url = build_instagram_oauth_url(state_token)
     logger.info(
         "instagram oauth_url workspace_id=%s user_id=%s org_id=%s",
@@ -140,6 +160,17 @@ def instagram_callback(request: HttpRequest, params: _CallbackParams = Query(...
 
     workspace_id: int = state_payload["workspace_id"]
     user_id: int = state_payload["user_id"]
+    try:
+        onboarding = IntegrationAccountOnboarding(
+            cyber_identity_id=uuid.UUID(str(state_payload["cyber_identity_id"])),
+            use_case=str(state_payload["use_case"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        logger.warning("instagram_callback early_redirect reason=invalid_onboarding_in_state")
+        return HttpResponse(
+            status=302,
+            headers={"Location": f"{frontend}/connect-integration?instagram_error=invalid_state"},
+        )
 
     try:
         from django.contrib.auth import get_user_model
@@ -175,6 +206,7 @@ def instagram_callback(request: HttpRequest, params: _CallbackParams = Query(...
             ig_user_id=ig_user_id,
             ig_username=ig_username,
             ig_oauth_graph_me_id=ig_oauth_graph_me_id,
+            onboarding=onboarding,
         )
 
         logger.info(

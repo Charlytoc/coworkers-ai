@@ -5,8 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Any
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+INTEGRATION_ONBOARDING_CONFIG_KEY = "integration_onboarding"
 
 
 class SenderApprovalStatus(str, Enum):
@@ -43,6 +46,41 @@ class IntegrationAccountSender(BaseModel):
     extractions: dict[str, Any] = Field(default_factory=dict)
     first_seen_at: datetime | None = None
     last_seen_at: datetime | None = None
+
+
+class IntegrationAccountOnboarding(BaseModel):
+    """Stored on ``IntegrationAccount.config`` while the default DM job is queued or being generated."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cyber_identity_id: UUID
+    use_case: str = Field(..., max_length=8000)
+
+    @field_validator("use_case")
+    @classmethod
+    def strip_use_case(cls, v: str) -> str:
+        s = (v or "").strip()
+        if not s:
+            raise ValueError("use_case must not be empty")
+        return s
+
+
+class LlmDefaultJobCopy(BaseModel):
+    """Structured output from the onboarding LLM (job copy only)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role_name: str = Field(..., max_length=200)
+    description: str = Field(..., max_length=2000)
+    instructions: str = Field(..., max_length=32000)
+
+    @field_validator("role_name", "description", "instructions")
+    @classmethod
+    def strip_nonempty(cls, v: str) -> str:
+        s = (v or "").strip()
+        if not s:
+            raise ValueError("field must not be empty")
+        return s
 
 
 class BaseIntegrationAccountConfig(BaseModel):

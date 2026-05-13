@@ -6,7 +6,9 @@ from ninja.errors import HttpError
 from ninja.security import django_auth
 
 from core.models import IntegrationAccount, Workspace, WorkspaceMember
+from core.schemas.integration_account import IntegrationAccountOnboarding
 from core.services.auth import ApiKeyAuth, auth_service
+from core.services.integration_account_onboarding import require_cyber_identity_in_workspace
 from core.services.telegram_bot import (
     approve_sender_code,
     connect_telegram_bot,
@@ -21,6 +23,8 @@ router = Router(tags=["Integrations / Telegram"])
 class TelegramConnectRequest(Schema):
     bot_token: str
     display_name: str | None = None
+    cyber_identity_id: uuid.UUID
+    use_case: str
 
 
 class TelegramConnectResponse(Schema):
@@ -74,11 +78,20 @@ def telegram_connect(request, workspace_id: int, data: TelegramConnectRequest):
     workspace = _require_workspace(request, workspace_id)
     user = auth_service.get_user_from_request(request)
     try:
+        require_cyber_identity_in_workspace(
+            workspace_id=workspace.id,
+            cyber_identity_id=data.cyber_identity_id,
+        )
+        onboarding = IntegrationAccountOnboarding(
+            cyber_identity_id=data.cyber_identity_id,
+            use_case=data.use_case,
+        )
         account = connect_telegram_bot(
             workspace=workspace,
             user=user,
             bot_token=data.bot_token,
             display_name=data.display_name,
+            onboarding=onboarding,
         )
     except ValueError as exc:
         return 400, ErrorResponseSchema(error=str(exc), error_code="telegram_connect_failed")

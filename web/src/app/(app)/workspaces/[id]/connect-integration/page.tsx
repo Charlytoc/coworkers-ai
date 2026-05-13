@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,17 +8,20 @@ import {
   Alert,
   Anchor,
   Button,
+  Center,
   Container,
   Loader,
-  Center,
   Paper,
   PasswordInput,
+  Select,
   Stack,
   Text,
+  Textarea,
   TextInput,
   Title,
 } from "@mantine/core";
 import { useWorkspacePage } from "@/hooks/use-workspace-page";
+import { fetchCyberIdentities } from "@/lib/workspace-cyber-identities";
 import { connectTelegramBot } from "@/lib/telegram-integration";
 import { getInstagramOAuthUrl } from "@/lib/instagram-integration";
 
@@ -40,6 +43,9 @@ export default function ConnectIntegrationPage() {
 
   const searchParams = useSearchParams();
 
+  const [cyberIdentityId, setCyberIdentityId] = useState<string | null>(null);
+  const [useCase, setUseCase] = useState("");
+
   const [botToken, setBotToken] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -48,12 +54,33 @@ export default function ConnectIntegrationPage() {
     searchParams.get("instagram_error"),
   );
 
+  const baseEnabled = workspaceReady && Boolean(token) && Boolean(orgId) && !Number.isNaN(workspaceId);
+
+  const { data: identities, isPending: identitiesPending } = useQuery({
+    queryKey: ["cyber-identities", token, orgId, workspaceId],
+    queryFn: () => fetchCyberIdentities(token!, orgId!, workspaceId),
+    enabled: baseEnabled,
+    staleTime: 15_000,
+  });
+
+  const identityOptions = useMemo(
+    () =>
+      (identities ?? []).map((i) => ({
+        value: i.id,
+        label: `${i.display_name} (${i.type})`,
+      })),
+    [identities],
+  );
+
   async function connectInstagram() {
-    if (!token || !orgId) return;
+    if (!token || !orgId || !cyberIdentityId) return;
     setIgError(null);
     setIgLoading(true);
     try {
-      const { oauth_url } = await getInstagramOAuthUrl(token, orgId, workspaceId);
+      const { oauth_url } = await getInstagramOAuthUrl(token, orgId, workspaceId, {
+        cyber_identity_id: cyberIdentityId,
+        use_case: useCase.trim(),
+      });
       window.location.href = oauth_url;
     } catch (err) {
       setIgError((err as Error).message);
@@ -66,6 +93,8 @@ export default function ConnectIntegrationPage() {
       connectTelegramBot(token!, orgId!, workspaceId, {
         bot_token: botToken.trim(),
         display_name: displayName.trim() || null,
+        cyber_identity_id: cyberIdentityId!,
+        use_case: useCase.trim(),
       }),
     onSuccess: async () => {
       setFormError(null);
@@ -78,6 +107,8 @@ export default function ConnectIntegrationPage() {
       setFormError(err.message);
     },
   });
+
+  const onboardingReady = Boolean(cyberIdentityId) && useCase.trim().length > 0;
 
   if (!sessionOk || !displayUser) {
     return (
@@ -156,6 +187,39 @@ export default function ConnectIntegrationPage() {
 
         <Paper withBorder radius="md" p="lg">
           <Stack gap="md">
+            <Title order={3}>How you will use this account</Title>
+            <Text size="sm" c="dimmed">
+              Pick the workspace persona that will own messages on this channel and describe what you want the
+              assistant to do. We use this to generate a tailored job after the connection succeeds.
+            </Text>
+            {identitiesPending ? (
+              <Loader size="sm" />
+            ) : (
+              <Select
+                label="Cyber identity"
+                placeholder="Choose who runs this integration"
+                data={identityOptions}
+                value={cyberIdentityId}
+                onChange={setCyberIdentityId}
+                searchable
+                required
+              />
+            )}
+            <Textarea
+              label="Use case"
+              placeholder="e.g. Reply to customer DMs in Spanish, escalate leads to sales, send appointment reminders…"
+              value={useCase}
+              onChange={(e) => setUseCase(e.currentTarget.value)}
+              minRows={4}
+              autosize
+              maxRows={12}
+              required
+            />
+          </Stack>
+        </Paper>
+
+        <Paper withBorder radius="md" p="lg">
+          <Stack gap="md">
             <Title order={3}>Telegram</Title>
             <Text size="sm" c="dimmed">
               Create a bot with{" "}
@@ -188,7 +252,7 @@ export default function ConnectIntegrationPage() {
             <Button
               onClick={() => connectMutation.mutate()}
               loading={connectMutation.isPending}
-              disabled={!botToken.trim()}
+              disabled={!botToken.trim() || !onboardingReady}
             >
               Connect Telegram bot
             </Button>
@@ -222,7 +286,7 @@ export default function ConnectIntegrationPage() {
             <Button
               onClick={connectInstagram}
               loading={igLoading}
-              disabled={!token || !orgId}
+              disabled={!token || !orgId || !onboardingReady}
               variant="gradient"
               gradient={{ from: "grape", to: "pink", deg: 135 }}
             >

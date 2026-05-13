@@ -16,7 +16,11 @@ from django.http import HttpRequest
 
 from core.integrations.event_types import TELEGRAM_PRIVATE_MESSAGE
 from core.models import IntegrationAccount, IntegrationEvent, Workspace
-from core.schemas.integration_account import SenderApprovalStatus
+from core.schemas.integration_account import (
+    INTEGRATION_ONBOARDING_CONFIG_KEY,
+    IntegrationAccountOnboarding,
+    SenderApprovalStatus,
+)
 from core.services.integration_senders import (
     get_sender,
     set_approval_status,
@@ -382,6 +386,7 @@ def connect_telegram_bot(
     user,
     bot_token: str,
     display_name: str | None,
+    onboarding: IntegrationAccountOnboarding,
 ) -> IntegrationAccount:
     bot_token = (bot_token or "").strip()
     if not bot_token:
@@ -410,14 +415,18 @@ def connect_telegram_bot(
                 "created_by": user if getattr(user, "pk", None) else None,
                 "display_name": label[:200],
                 "status": IntegrationAccount.Status.ACTIVE,
-                "config": ensure_telegram_config_defaults(
-                    {CONFIG_WEBHOOK_PATH_TOKEN: webhook_path_token}
-                ),
+                "config": {
+                    **ensure_telegram_config_defaults(
+                        {CONFIG_WEBHOOK_PATH_TOKEN: webhook_path_token}
+                    ),
+                    INTEGRATION_ONBOARDING_CONFIG_KEY: onboarding.model_dump(mode="json"),
+                },
             },
         )
         if not _created:
             cfg = ensure_telegram_config_defaults(dict(account.config or {}))
             cfg[CONFIG_WEBHOOK_PATH_TOKEN] = webhook_path_token
+            cfg[INTEGRATION_ONBOARDING_CONFIG_KEY] = onboarding.model_dump(mode="json")
             account.config = cfg
             account.display_name = label[:200] or account.display_name
             account.status = IntegrationAccount.Status.ACTIVE
@@ -428,10 +437,9 @@ def connect_telegram_bot(
         }
         account.save()
 
-        from core.services.job_assignment_defaults import (
-            ensure_default_job_assignment_for_telegram,
-        )
-        ensure_default_job_assignment_for_telegram(account=account, user=user)
+    from core.tasks.integration_onboarding import provision_integration_default_job
+
+    provision_integration_default_job.delay(str(account.id))
 
     telegram_set_webhook(bot_token, webhook_url, webhook_secret)
 
