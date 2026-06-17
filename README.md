@@ -16,12 +16,15 @@ influencers/
 
 | Service   | URL                        | Description                          |
 |-----------|----------------------------|--------------------------------------|
-| Django    | http://localhost:8000      | REST API + Django admin              |
-| Web       | http://localhost:3000      | Next.js landing; `/chat` when signed in |
-| Realtime  | http://localhost:3001      | WebSocket / realtime events          |
+| Nginx     | http://localhost:9000      | Reverse proxy entry point (`ENTRYPOINT_PORT`) |
+| Django    | http://localhost:8000      | REST API + Django admin (direct)     |
+| Web       | http://localhost:3000      | Next.js dev server (direct)          |
+| Realtime  | http://localhost:3001      | WebSocket / realtime events (direct) |
 | Flower    | http://localhost:5555      | Celery UI (`FLOWER_HOST_PORT` if 5555 is busy) |
 | Postgres  | localhost:5432             | PostgreSQL database                  |
 | Redis     | localhost:6379             | Cache + message broker               |
+
+Nginx routes all traffic through a single port: `/api/` and `/admin/` → Django, `/socket.io/` → Realtime, everything else → Next.js.
 
 ---
 
@@ -44,16 +47,18 @@ cd influencers
 ### 2. Set up environment variables
 
 ```bash
-cp .env.example .env
-# Edit .env and fill in any required secrets
+chmod +x taskfile.sh
+./taskfile.sh setup-env
+# Edit .env and fill in any required secrets (API keys, etc.)
 ```
+
+This copies `.env.example` to `.env` and auto-generates `CONTAINER_SUFFIX` and `INTEGRATION_ENCRYPTION_KEY`.
 
 ### 3. Start the backend stack
 
-This starts Django, PostgreSQL, Redis, Celery, Celery Beat, Flower, and the Realtime service — all via Docker Compose.
+This starts Django, PostgreSQL, Redis, Celery, Celery Beat, Flower, Realtime, and Nginx — all via Docker Compose.
 
 ```bash
-chmod +x taskfile.sh
 ./taskfile.sh start
 ```
 
@@ -84,7 +89,7 @@ Run `./taskfile.sh help` to see all available commands.
 ```
 ./taskfile.sh <command>
 
-  setup-env               Copy .env.example to .env
+  setup-env               Copy .env.example to .env; auto-generate CONTAINER_SUFFIX and INTEGRATION_ENCRYPTION_KEY
   setup-django            Run migrations and create default org + superuser
   start                   Start the full backend stack (Docker)
   start --rebuild / -r    Rebuild images before starting
@@ -141,8 +146,10 @@ All configuration lives in `.env` at the project root (copied from `.env.example
 | `DJANGO_PORT` | `8000` | Django API port |
 | `REALTIME_PORT` | `3001` | Realtime service port |
 | `FLOWER_HOST_PORT` | `5555` | Host port mapped to Flower in Docker (change if local 5555 is busy) |
-| `WEB_PORT` | `3000` | Next.js dev server port |
+| `WEB_PORT` | `3000` | Next.js dev server port (nginx proxies `/` here) |
+| `ENTRYPOINT_PORT` | `9000` | Host port for the nginx reverse proxy |
 | `REDIS_HOST_PORT` | `6379` | Host port mapped to Redis in Docker (raise if local 6379 is busy) |
+| `INTEGRATION_ENCRYPTION_KEY` | _(auto-generated)_ | Fernet key for encrypting integration secrets |
 | `REDIS_HOST` | `redis` | Redis hostname (e.g. ElastiCache endpoint in AWS) |
 | `REDIS_URL` / `CELERY_*` | see `.env.example` | Full URLs; use if host or DB index differs from defaults |
 | `OPENAI_API_KEY` | _(empty)_ | Optional — for AI features |

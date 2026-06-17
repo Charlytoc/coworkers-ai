@@ -18,6 +18,18 @@ function _finish() {
 }
 trap _finish EXIT
 
+function _generate_env_var() {
+  local file="$1" key="$2" value="$3"
+  if ! grep -qE "^${key}=.+" "$file"; then
+    if grep -q "^${key}=" "$file"; then
+      sed -i '' "s|^${key}=.*|${key}=${value}|" "$file"
+    else
+      echo "${key}=${value}" >> "$file"
+    fi
+    echo "Generated ${key}"
+  fi
+}
+
 function help() {
   echo "$0 <task> <args>"
   echo ""
@@ -57,16 +69,8 @@ function setup-env() {
     echo "Please ask for sensitive environment variable values"
   fi
 
-  if ! grep -qE '^CONTAINER_SUFFIX=.+' "$root/.env"; then
-    local suffix
-    suffix=$(openssl rand -hex 3)
-    if grep -q '^CONTAINER_SUFFIX=' "$root/.env"; then
-      sed -i '' "s/^CONTAINER_SUFFIX=.*/CONTAINER_SUFFIX=${suffix}/" "$root/.env"
-    else
-      echo "CONTAINER_SUFFIX=${suffix}" >> "$root/.env"
-    fi
-    echo "Generated CONTAINER_SUFFIX=${suffix}"
-  fi
+  _generate_env_var "$root/.env" CONTAINER_SUFFIX "$(openssl rand -hex 3)"
+  _generate_env_var "$root/.env" INTEGRATION_ENCRYPTION_KEY "$(openssl rand -base64 32 | tr '+/' '-_')"
 
   if ! command -v uv >/dev/null 2>&1; then
     echo "uv is not installed. Install it, then re-run: ./taskfile.sh setup-env" >&2
