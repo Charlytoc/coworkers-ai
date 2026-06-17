@@ -57,9 +57,6 @@ class JobAssignmentAction(BaseModel):
 
 IntegrationAccountProvider = Literal["telegram", "instagram", "gmail"]
 
-CyberIdentityTypeLiteral = Literal["influencer", "community_manager", "analyst", "personal_assistant"]
-
-
 class JobAssignmentConfigAccount(BaseModel):
     """Integration account bound to the job (id + provider snapshot)."""
 
@@ -69,23 +66,12 @@ class JobAssignmentConfigAccount(BaseModel):
     provider: IntegrationAccountProvider
 
 
-class JobAssignmentConfigIdentity(BaseModel):
-    """Cyber identity in scope for the job (id + type + config snapshot)."""
-
-    model_config = ConfigDict(extra="allow")
-
-    id: UUID
-    type: CyberIdentityTypeLiteral
-    config: dict[str, Any] = Field(default_factory=dict)
-
-
 class JobAssignmentConfig(BaseModel):
     """Runtime JSON under ``JobAssignment.config``."""
 
     model_config = ConfigDict(extra="allow")
 
     accounts: list[JobAssignmentConfigAccount] = Field(default_factory=list)
-    identities: list[JobAssignmentConfigIdentity] = Field(default_factory=list)
     triggers: list[JobAssignmentTrigger] = Field(default_factory=list)
     actions: list[JobAssignmentAction] = Field(default_factory=list)
     channels: list[Channel] = Field(

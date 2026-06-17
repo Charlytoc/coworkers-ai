@@ -62,11 +62,10 @@ def make_schedule_one_off_task_tool(
         except ValidationError as exc:
             return f"Error: {exc.errors()[0]['msg']}"
 
-        cfg_model = job.get_config()
         identity_snapshot: IdentityConfigSnapshot | None = None
-        if cfg_model.identities:
-            first = cfg_model.identities[0]
-            identity_snapshot = IdentityConfigSnapshot(identity=first.id, config=first.config)
+        if job.identity_id is not None:
+            identity = job.identity
+            identity_snapshot = IdentityConfigSnapshot(identity=identity.id, config=identity.config or {})
 
         scheduled_to = timezone.now() + timedelta(minutes=args.in_minutes)
         inputs = TaskExecutionInputs(

@@ -452,9 +452,7 @@ export default function ChatPage() {
               rows
                 .filter(
                   (j) =>
-                    j.enabled &&
-                    Array.isArray(j.config.identities) &&
-                    j.config.identities.length > 0,
+                    j.enabled && j.identity_id != null,
                 )
                 .map((j) => ({ ...j, workspace_name: ws.name })),
             )

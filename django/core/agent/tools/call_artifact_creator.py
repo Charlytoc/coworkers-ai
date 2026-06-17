@@ -80,14 +80,14 @@ def make_call_artifact_creator_tool(
         except ValidationError as exc:
             return f"Error: {exc.errors()[0]['msg']}"
 
-        cfg_model = job.get_config()
         identity_snapshot: IdentityConfigSnapshot | None = None
-        if cfg_model.identities:
-            first = cfg_model.identities[0]
-            identity_snapshot = IdentityConfigSnapshot(identity=first.id, config=first.config)
+        if job.identity_id is not None:
+            identity = job.identity
+            identity_snapshot = IdentityConfigSnapshot(identity=identity.id, config=identity.config or {})
+        job_cfg = job.get_config()
         publish_actions = [
             action
-            for action in cfg_model.actions
+            for action in job_cfg.actions
             if action.actionable_slug == INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE.slug
         ]
 

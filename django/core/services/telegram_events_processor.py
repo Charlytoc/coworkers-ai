@@ -31,7 +31,7 @@ def _workspace_has_configured_jobs(account: IntegrationAccount) -> bool:
     """True when the workspace has at least one enabled job with identities and actions (may not match this bot)."""
     for job in JobAssignment.objects.filter(workspace=account.workspace, enabled=True).iterator():
         cfg_model = job.get_config()
-        if cfg_model.actions and cfg_model.identities:
+        if cfg_model.actions and job.identity_id is not None:
             return True
     return False
 

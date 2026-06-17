@@ -110,7 +110,6 @@ def make_create_recurring_job_tool(
 
         child_cfg = JobAssignmentConfig(
             accounts=list(parent_cfg.accounts),
-            identities=list(parent_cfg.identities),
             triggers=[JobAssignmentCronTrigger(type="cron", on=args.cron, filter={})],
             actions=list(parent_cfg.actions),
             channels=inherited_channels,
@@ -126,6 +125,7 @@ def make_create_recurring_job_tool(
                 instructions=args.instructions,
                 enabled=False,
                 parent_job_assignment=job,
+                identity=job.identity,
             )
             child.set_config(child_cfg)
             child.save()

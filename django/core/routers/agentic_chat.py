@@ -90,7 +90,7 @@ def _resolve_web_chat_job_context(
     *, user, job_assignment_id: uuid.UUID
 ) -> tuple[_WebChatJobContext | None, AgenticChatErrorResponse | None, int | None]:
     """Return ``(ctx, None, None)`` on success, or ``(None, error, http_status)`` on failure."""
-    job = JobAssignment.objects.select_related("workspace").filter(id=job_assignment_id).first()
+    job = JobAssignment.objects.select_related("workspace", "identity").filter(id=job_assignment_id).first()
     if job is None:
         return (
             None,
@@ -117,27 +117,15 @@ def _resolve_web_chat_job_context(
             400,
         )
 
-    cfg = job.get_config()
-    if not cfg.identities:
-        return (
-            None,
-            AgenticChatErrorResponse(
-                error="This job has no cyber identities; add one to use web chat.",
-                error_code="JOB_HAS_NO_IDENTITIES",
-            ),
-            400,
-        )
-
-    primary_id = cfg.identities[0].id
-    identity = CyberIdentity.objects.filter(id=primary_id, workspace=job.workspace).first()
+    identity = job.identity
     if identity is None:
         return (
             None,
             AgenticChatErrorResponse(
-                error="Primary cyber identity for this job was not found.",
-                error_code="CYBER_IDENTITY_NOT_FOUND",
+                error="This job has no cyber identity; assign one to use web chat.",
+                error_code="JOB_HAS_NO_IDENTITY",
             ),
-            404,
+            400,
         )
 
     if not identity.is_active:

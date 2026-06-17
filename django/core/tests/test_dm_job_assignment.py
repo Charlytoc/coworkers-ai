@@ -23,7 +23,6 @@ from core.schemas.job_assignment import (
     JobAssignmentActionDirectRecipient,
     JobAssignmentConfig,
     JobAssignmentConfigAccount,
-    JobAssignmentConfigIdentity,
 )
 from core.services.send_targets import collect_resolved_send_targets
 
@@ -70,11 +69,6 @@ class DmJobAssignmentValidationTests(TestCase):
     def test_direct_recipients_rejected_on_reply_action(self) -> None:
         cfg = JobAssignmentConfig(
             accounts=[JobAssignmentConfigAccount(id=self.account.id, provider="telegram")],
-            identities=[
-                JobAssignmentConfigIdentity(
-                    id=self.identity.id, type="personal_assistant", config={}
-                )
-            ],
             triggers=[],
             actions=[
                 JobAssignmentAction(
@@ -93,11 +87,6 @@ class DmJobAssignmentValidationTests(TestCase):
     def test_direct_action_requires_recipients(self) -> None:
         cfg = JobAssignmentConfig(
             accounts=[JobAssignmentConfigAccount(id=self.account.id, provider="telegram")],
-            identities=[
-                JobAssignmentConfigIdentity(
-                    id=self.identity.id, type="personal_assistant", config={}
-                )
-            ],
             triggers=[],
             actions=[
                 JobAssignmentAction(
@@ -153,11 +142,6 @@ class CollectResolvedSendTargetsTests(TestCase):
         )
         cfg = JobAssignmentConfig(
             accounts=[JobAssignmentConfigAccount(id=self.account.id, provider="telegram")],
-            identities=[
-                JobAssignmentConfigIdentity(
-                    id=self.identity.id, type="personal_assistant", config={}
-                )
-            ],
             triggers=[],
             actions=[
                 JobAssignmentAction(
@@ -174,6 +158,7 @@ class CollectResolvedSendTargetsTests(TestCase):
             ],
         )
         self.job.set_config(cfg)
+        self.job.identity = self.identity
         self.job.save()
         self.conv = Conversation.objects.create(
             workspace=self.workspace,
@@ -194,11 +179,6 @@ class CollectResolvedSendTargetsTests(TestCase):
     def test_reply_and_direct_deduped_by_thread(self) -> None:
         cfg = JobAssignmentConfig(
             accounts=[JobAssignmentConfigAccount(id=self.account.id, provider="telegram")],
-            identities=[
-                JobAssignmentConfigIdentity(
-                    id=self.identity.id, type="personal_assistant", config={}
-                )
-            ],
             triggers=[],
             actions=[
                 JobAssignmentAction(

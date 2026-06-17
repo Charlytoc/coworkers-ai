@@ -117,10 +117,10 @@ def dispatch_due_cron_jobs() -> dict:
 def _create_cron_task(job: JobAssignment, cfg, cron_expr: str) -> None:
     channel = cfg.channels[0] if cfg.channels else None
     identity_snapshot = None
-    if cfg.identities:
+    if job.identity_id is not None:
         from core.schemas.task_execution import IdentityConfigSnapshot
-        first = cfg.identities[0]
-        identity_snapshot = IdentityConfigSnapshot(identity=first.id, config=first.config)
+        identity = job.identity
+        identity_snapshot = IdentityConfigSnapshot(identity=identity.id, config=identity.config or {})
 
     inputs = TaskExecutionInputs(
         task_instructions=job.instructions or job.role_name,

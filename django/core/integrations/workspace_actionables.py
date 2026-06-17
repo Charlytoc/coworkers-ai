@@ -23,7 +23,7 @@ from core.integrations.integration_provider_registry import (
     is_direct_dm_slug,
     is_reply_dm_slug,
 )
-from core.models import CyberIdentity, IntegrationAccount, JobAssignment, Workspace
+from core.models import IntegrationAccount, JobAssignment, Workspace
 from core.schemas.job_assignment import (
     JobAssignmentConfig,
     JobAssignmentConfigAccount,
@@ -158,18 +158,6 @@ def validate_job_assignment_config(
             raise HttpError(
                 400,
                 f"config.accounts[{i}] provider mismatch (stored={stored.provider!r}, sent={acc.provider!r}).",
-            )
-
-    if len(config.identities) == 0:
-        raise HttpError(400, "At least one cyber identity is required (config.identities).")
-    for i, ident in enumerate(config.identities):
-        stored = CyberIdentity.objects.filter(id=ident.id, workspace=workspace).first()
-        if stored is None:
-            raise HttpError(400, f"config.identities[{i}] is not in this workspace.")
-        if stored.type != ident.type:
-            raise HttpError(
-                400,
-                f"config.identities[{i}] type mismatch (stored={stored.type!r}, sent={ident.type!r}).",
             )
 
     for i, tr in enumerate(config.triggers):

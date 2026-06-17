@@ -29,7 +29,6 @@ import { fetchCyberIdentities } from "@/lib/workspace-cyber-identities";
 import { IntegrationActionsTriggersEditor } from "@/components/job-assignments/integration-actions-triggers-editor";
 import {
   buildActionsPayload,
-  buildIdentitiesPayload,
   buildTriggersPayload,
   createJobAssignment,
   deleteJobAssignment,
@@ -112,18 +111,14 @@ export default function WorkspaceJobAssignmentsPage() {
 
   const createMutation = useMutation({
     mutationFn: () => {
-      const identityPayload = buildIdentitiesPayload(
-        selectedIdentityId ? [selectedIdentityId] : [],
-        identities ?? [],
-      );
       const actions = buildActionsPayload(selectedActionKeys, directDmRecipientsByKey);
       return createJobAssignment(token!, orgId!, workspaceId, {
         role_name: roleName.trim(),
         description: description.trim(),
         instructions: instructions.trim(),
         enabled: true,
+        identity_id: selectedIdentityId ?? null,
         config: {
-          identities: identityPayload,
           actions,
           triggers: buildTriggersPayload(integrationEventSlugs, []),
         },
@@ -338,11 +333,9 @@ export default function WorkspaceJobAssignmentsPage() {
               <Table.Tbody>
                 {jobs.map((row) => {
                   const acts = (row.config.actions as unknown[]) ?? [];
-                  const idRows = row.config.identities ?? [];
-                  const identityLabels = idRows.map((ident) => {
-                    const found = identities?.find((i) => i.id === ident.id);
-                    return found?.display_name ?? ident.id.slice(0, 8);
-                  });
+                  const identityLabel = row.identity_id
+                    ? (identities?.find((i) => i.id === row.identity_id)?.display_name ?? row.identity_id.slice(0, 8))
+                    : null;
                   return (
                     <Table.Tr key={row.id}>
                       <Table.Td>
@@ -354,22 +347,11 @@ export default function WorkspaceJobAssignmentsPage() {
                         ) : null}
                       </Table.Td>
                       <Table.Td>
-                        <Stack gap={2}>
-                          {identityLabels[0] ? (
-                            <Badge size="sm" variant="outline">
-                              {identityLabels[0]}
-                            </Badge>
-                          ) : (
-                            <Text size="xs" c="dimmed">
-                              —
-                            </Text>
-                          )}
-                          {identityLabels.length > 1 ? (
-                            <Text size="xs" c="dimmed">
-                              +{identityLabels.length - 1} more
-                            </Text>
-                          ) : null}
-                        </Stack>
+                        {identityLabel ? (
+                          <Badge size="sm" variant="outline">{identityLabel}</Badge>
+                        ) : (
+                          <Text size="xs" c="dimmed">—</Text>
+                        )}
                       </Table.Td>
                       <Table.Td>
                         <Switch

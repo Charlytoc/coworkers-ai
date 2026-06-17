@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from model_utils.models import TimeStampedModel
 
+from core.models.cyber_identity import CyberIdentity
 from core.models.workspace import Workspace
 from core.schemas.job_assignment import JobAssignmentConfig
 
@@ -56,6 +57,13 @@ class JobAssignment(TimeStampedModel):
         default=dict,
         blank=True,
         help_text="Targeting + runtime policy: accounts [{id, provider}], identities [{id, type, config}], triggers, actions, approval_policy, optional output_schema. Can be overridden at task execution level.",
+    )
+    identity = models.ForeignKey(
+        CyberIdentity,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="job_assignments",
     )
     enabled = models.BooleanField(default=True)
     parent_job_assignment = models.ForeignKey(

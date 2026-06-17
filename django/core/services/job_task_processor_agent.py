@@ -165,11 +165,9 @@ class JobTaskProcessorAgent:
             return []
         event_slug = spec.inbound_event_slug
         out: list[JobAssignment] = []
-        qs = JobAssignment.objects.filter(workspace=account.workspace, enabled=True).order_by("role_name")
+        qs = JobAssignment.objects.filter(workspace=account.workspace, enabled=True, identity__isnull=False).order_by("role_name")
         for job in qs:
             cfg_model = job.get_config()
-            if not cfg_model.identities:
-                continue
             listens = any(
                 isinstance(tr, JobAssignmentEventTrigger) and tr.on == event_slug
                 for tr in cfg_model.triggers
@@ -219,11 +217,7 @@ class JobTaskProcessorAgent:
 
     @staticmethod
     def primary_identity_for_job(job: JobAssignment) -> CyberIdentity | None:
-        cfg = job.get_config()
-        if not cfg.identities:
-            return None
-        first = cfg.identities[0]
-        return CyberIdentity.objects.filter(id=first.id, workspace=job.workspace).first()
+        return job.identity
 
     @staticmethod
     def integration_channel_for_thread(
@@ -234,20 +228,12 @@ class JobTaskProcessorAgent:
 
     @staticmethod
     def model_for_job(job: JobAssignment) -> str | None:
-        """Return the first ``identity.config['model']`` found among the job's scoped identities."""
-        cfg = job.get_config()
-        for ident in cfg.identities:
-            model = (ident.config or {}).get("model")
-            if isinstance(model, str) and model.strip():
-                return model.strip()
-        id_list: list[uuid.UUID] = [ident.id for ident in cfg.identities]
-        if not id_list:
+        """Return the model override from the job's identity config, if set."""
+        identity = job.identity
+        if identity is None:
             return None
-        for row in CyberIdentity.objects.filter(id__in=id_list, workspace=job.workspace):
-            model = (row.config or {}).get("model")
-            if isinstance(model, str) and model.strip():
-                return model.strip()
-        return None
+        model = (identity.config or {}).get("model")
+        return model.strip() if isinstance(model, str) and model.strip() else None
 
     @staticmethod
     def _user_facing_send_tool_name(dm_targets: list) -> str | None:
@@ -279,13 +265,7 @@ class JobTaskProcessorAgent:
         if (job.instructions or "").strip():
             parts.append(f"Instructions:\n{job.instructions.strip()}")
 
-        # Primary speaking role: first identity in job config (jobs are expected to use one).
-        primary_id = cfg_model.identities[0].id if cfg_model.identities else None
-        primary = (
-            CyberIdentity.objects.filter(id=primary_id, workspace=job.workspace).first()
-            if primary_id is not None
-            else None
-        )
+        primary = job.identity
         if primary is not None:
             type_label = primary.get_type_display()
             parts.append(
@@ -294,11 +274,6 @@ class JobTaskProcessorAgent:
                 "Use this name and voice consistently when you address or represent yourself to the user; "
                 "do not fall back to a vague unnamed assistant unless this persona would naturally do so."
             )
-            if len(cfg_model.identities) > 1:
-                parts.append(
-                    "This job lists more than one identity in configuration; your **primary** user-facing "
-                    f"role for this run is still **{primary.display_name}**."
-                )
         else:
             parts.append(
                 "**Persona:** This job has no cyber identity in scope; act as a neutral workspace agent."

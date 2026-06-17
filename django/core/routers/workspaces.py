@@ -598,6 +598,7 @@ class JobAssignmentResponse(Schema):
     instructions: str
     enabled: bool
     config: dict
+    identity_id: uuid.UUID | None
     created: datetime
 
 
@@ -610,6 +611,7 @@ def _job_assignment_response(row: JobAssignment) -> JobAssignmentResponse:
         instructions=row.instructions or "",
         enabled=row.enabled,
         config=row.config or {},
+        identity_id=row.identity_id,
         created=row.created,
     )
 
@@ -620,6 +622,7 @@ class JobAssignmentCreateRequest(Schema):
     instructions: str = ""
     enabled: bool = True
     config: dict = {}
+    identity_id: uuid.UUID | None = None
 
 
 class JobAssignmentUpdateRequest(Schema):
@@ -628,6 +631,7 @@ class JobAssignmentUpdateRequest(Schema):
     instructions: str | None = None
     enabled: bool | None = None
     config: dict | None = None
+    identity_id: uuid.UUID | None = None
 
 
 def _parse_job_config(cfg: dict) -> JobAssignmentConfig:
@@ -666,10 +670,18 @@ def list_job_assignments(request, workspace_id: int):
     auth=[ApiKeyAuth(), django_auth],
 )
 def create_job_assignment(request, workspace_id: int, data: JobAssignmentCreateRequest):
+    from core.models import CyberIdentity
+
     workspace = _workspace_for_member(request, workspace_id)
     role_name = (data.role_name or "").strip()
     if not role_name:
         return 400, ErrorResponseSchema(error="role_name is required.", error_code="ROLE_NAME_REQUIRED")
+
+    identity = None
+    if data.identity_id is not None:
+        identity = CyberIdentity.objects.filter(id=data.identity_id, workspace=workspace).first()
+        if identity is None:
+            return 400, ErrorResponseSchema(error="identity_id not found in this workspace.", error_code="IDENTITY_NOT_FOUND")
 
     raw_cfg = dict(data.config or {})
     cfg_model = _parse_job_config(raw_cfg)
@@ -685,6 +697,7 @@ def create_job_assignment(request, workspace_id: int, data: JobAssignmentCreateR
         description=(data.description or "").strip(),
         instructions=(data.instructions or "").strip(),
         enabled=data.enabled,
+        identity=identity,
     )
     row.set_config(cfg_model)
     row.save()
@@ -726,6 +739,8 @@ def update_job_assignment(
     job_assignment_id: uuid.UUID,
     data: JobAssignmentUpdateRequest,
 ):
+    from core.models import CyberIdentity
+
     workspace = _workspace_for_member(request, workspace_id)
     row = JobAssignment.objects.filter(id=job_assignment_id, workspace=workspace).first()
     if row is None:
@@ -742,6 +757,14 @@ def update_job_assignment(
         row.instructions = data.instructions.strip()
     if data.enabled is not None:
         row.enabled = data.enabled
+    if "identity_id" in data.model_fields_set:
+        if data.identity_id is None:
+            row.identity = None
+        else:
+            identity = CyberIdentity.objects.filter(id=data.identity_id, workspace=workspace).first()
+            if identity is None:
+                return 400, ErrorResponseSchema(error="identity_id not found in this workspace.", error_code="IDENTITY_NOT_FOUND")
+            row.identity = identity
     if data.config is not None:
         cfg_model = _parse_job_config({**(row.config or {}), **data.config})
         validate_job_assignment_config(

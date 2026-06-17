@@ -1,5 +1,4 @@
 import { apiFetch, apiReadJson, throwApiError } from "@/lib/api-request";
-import type { CyberIdentity } from "@/lib/workspace-cyber-identities";
 import type { WorkspaceIntegrationItem } from "@/lib/workspace-integrations";
 
 export type ActionableCatalogRow = {
@@ -21,16 +20,9 @@ export type JobAssignmentConfigAccount = {
   provider: string;
 };
 
-export type JobAssignmentConfigIdentity = {
-  id: string;
-  type: string;
-  config: Record<string, unknown>;
-};
-
 /** Canonical ``JobAssignment.config`` from the API (after create/update). */
 export type JobAssignmentConfig = {
   accounts: JobAssignmentConfigAccount[];
-  identities: JobAssignmentConfigIdentity[];
   triggers: Record<string, unknown>[];
   actions: Record<string, unknown>[];
   approval_policy?: Record<string, unknown> | null;
@@ -45,6 +37,7 @@ export type JobAssignment = {
   instructions: string;
   enabled: boolean;
   config: JobAssignmentConfig;
+  identity_id: string | null;
   created: string;
 };
 
@@ -111,7 +104,7 @@ export type JobAssignmentCreateInput = {
   description?: string;
   instructions?: string;
   enabled?: boolean;
-  /** Partial config is merged with server defaults and coerced to ``JobAssignmentConfig``. */
+  identity_id?: string | null;
   config?: Partial<JobAssignmentConfig> & Record<string, unknown>;
 };
 
@@ -147,16 +140,6 @@ export function directDmRecipientsValidationError(
     }
   }
   return null;
-}
-
-export function buildIdentitiesPayload(
-  selectedIdentityIds: string[],
-  identities: CyberIdentity[],
-): JobAssignmentConfigIdentity[] {
-  return selectedIdentityIds
-    .map((id) => identities.find((i) => i.id === id))
-    .filter((row): row is CyberIdentity => Boolean(row))
-    .map((i) => ({ id: i.id, type: i.type, config: i.config ?? {} }));
 }
 
 export function buildActionsPayload(

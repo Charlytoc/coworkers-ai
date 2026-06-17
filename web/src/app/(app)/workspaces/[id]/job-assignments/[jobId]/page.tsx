@@ -25,7 +25,6 @@ import { fetchCyberIdentities } from "@/lib/workspace-cyber-identities";
 import { IntegrationActionsTriggersEditor } from "@/components/job-assignments/integration-actions-triggers-editor";
 import {
   buildActionsPayload,
-  buildIdentitiesPayload,
   buildTriggersPayload,
   directDmRecipientsValidationError,
   fetchJobAssignment,
@@ -66,10 +65,7 @@ function JobAssignmentDetailForm({
   const [roleName, setRoleName] = useState(job.role_name);
   const [description, setDescription] = useState(job.description ?? "");
   const [instructions, setInstructions] = useState(job.instructions ?? "");
-  const [identityId, setIdentityId] = useState<string | null>(() => {
-    const ids = (job.config.identities ?? []).map((i) => i.id);
-    return ids[0] ?? null;
-  });
+  const [identityId, setIdentityId] = useState<string | null>(() => job.identity_id ?? null);
   const [actionKeys, setActionKeys] = useState(
     () => parseActionsFromConfig(job.config.actions ?? []).actionKeys,
   );
@@ -94,17 +90,13 @@ function JobAssignmentDetailForm({
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const identityPayload = buildIdentitiesPayload(
-        identityId ? [identityId] : [],
-        identities ?? [],
-      );
       const actions = buildActionsPayload(actionKeys, directDmRecipientsByKey);
       return updateJobAssignment(token, orgId, workspaceId, jobId, {
         role_name: roleName.trim(),
         description: description.trim(),
         instructions: instructions.trim(),
+        identity_id: identityId ?? null,
         config: {
-          identities: identityPayload,
           actions,
           triggers: buildTriggersPayload(integrationEventSlugs, otherTriggers),
         },
@@ -375,12 +367,12 @@ export default function JobAssignmentDetailPage() {
                   component={Link}
                   href={`/chat?job=${encodeURIComponent(jobId)}&workspace=${workspaceId}`}
                   disabled={
-                    !job.enabled || !(job.config.identities && job.config.identities.length > 0)
+                    !job.enabled || job.identity_id == null
                   }
                   title={
                     !job.enabled
                       ? "Enable this job to use web chat"
-                      : !(job.config.identities && job.config.identities.length > 0)
+                      : job.identity_id == null
                         ? "Add a cyber identity to this job to use web chat"
                         : "Open web chat for this job"
                   }

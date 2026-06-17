@@ -49,10 +49,9 @@ def enqueue_artifact_creator_callback(
         artifacts=artifacts,
     )
 
-    parent_cfg = parent_job.get_config()
     identity_snapshot: IdentityConfigSnapshot | None = None
-    if parent_cfg.identities:
-        first = parent_cfg.identities[0]
+    if parent_job.identity_id is not None:
+        first = parent_job.identity
         identity_snapshot = IdentityConfigSnapshot(identity=first.id, config=first.config)
 
     callback_inputs = TaskExecutionInputs(

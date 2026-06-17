@@ -132,10 +132,8 @@ class ProvisionDefaultJobTests(TestCase):
         self.assertEqual(job.description, "Handles Telegram DMs for demos.")
         self.assertEqual(job.instructions, "Use send_message for every reply. Be concise.")
 
-        cfg = job.get_config()
-        self.assertEqual(len(cfg.identities), 1)
-        self.assertEqual(cfg.identities[0].id, self.identity.id)
-        slugs = {a.actionable_slug for a in cfg.actions}
+        self.assertEqual(job.identity_id, self.identity.id)
+        slugs = {a.actionable_slug for a in job.get_config().actions}
         self.assertIn(TELEGRAM_REPLY_DM.slug, slugs)
 
         self.account.refresh_from_db()

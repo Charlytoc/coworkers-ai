@@ -1016,6 +1016,8 @@ export interface components {
             config: {
                 [key: string]: unknown;
             };
+            /** Identity Id */
+            identity_id: string | null;
             /**
              * Created
              * Format: date-time
@@ -1048,6 +1050,8 @@ export interface components {
             config: {
                 [key: string]: unknown;
             };
+            /** Identity Id */
+            identity_id?: string | null;
         };
         /** JobAssignmentUpdateRequest */
         JobAssignmentUpdateRequest: {
@@ -1063,6 +1067,8 @@ export interface components {
             config?: {
                 [key: string]: unknown;
             } | null;
+            /** Identity Id */
+            identity_id?: string | null;
         };
         /** ArtifactIdentityOut */
         ArtifactIdentityOut: {

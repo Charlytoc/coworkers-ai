@@ -19,7 +19,6 @@ from core.schemas.job_assignment import (
     JobAssignmentAction,
     JobAssignmentConfig,
     JobAssignmentConfigAccount,
-    JobAssignmentConfigIdentity,
     JobAssignmentEventTrigger,
 )
 
@@ -112,13 +111,6 @@ def build_telegram_default_job_config(
         accounts=[
             JobAssignmentConfigAccount(id=account.id, provider=account.provider),
         ],
-        identities=[
-            JobAssignmentConfigIdentity(
-                id=identity.id,
-                type=identity.type,
-                config=identity.config or {},
-            ),
-        ],
         triggers=[
             JobAssignmentEventTrigger(
                 type="event",
@@ -149,13 +141,6 @@ def build_instagram_default_job_config(
     return JobAssignmentConfig(
         accounts=[
             JobAssignmentConfigAccount(id=account.id, provider=account.provider),
-        ],
-        identities=[
-            JobAssignmentConfigIdentity(
-                id=identity.id,
-                type=identity.type,
-                config=identity.config or {},
-            ),
         ],
         triggers=[
             JobAssignmentEventTrigger(
@@ -207,6 +192,7 @@ def create_default_dm_job_for_account(
         description=description,
         instructions=instructions,
         enabled=enabled,
+        identity=identity,
     )
     job.set_config(cfg)
     job.save()

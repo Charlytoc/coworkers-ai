@@ -49,11 +49,10 @@ def create_queued_event_task_execution(
     triggering_message_id: uuid.UUID,
 ) -> TaskExecution:
     """Persist a ``TaskExecution`` for an inbound/event-driven run (already ``QUEUED`` for immediate Celery)."""
-    cfg = job.get_config()
     identity_snapshot: IdentityConfigSnapshot | None = None
-    if cfg.identities:
-        first = cfg.identities[0]
-        identity_snapshot = IdentityConfigSnapshot(identity=first.id, config=first.config)
+    if job.identity_id is not None:
+        identity = job.identity
+        identity_snapshot = IdentityConfigSnapshot(identity=identity.id, config=identity.config or {})
 
     inputs = TaskExecutionInputs(
         task_instructions=task_instructions,
