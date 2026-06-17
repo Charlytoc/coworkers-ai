@@ -213,13 +213,16 @@ CACHES = {
 _web_port = os.environ.get("WEB_PORT", "3000")
 _django_port = os.environ.get("DJANGO_PORT", "8000")
 
-CORS_ALLOWED_ORIGINS = [
+_frontend_url = os.getenv("FRONTEND_URL", f"http://localhost:{_web_port}").rstrip("/")
+
+CORS_ALLOWED_ORIGINS = list(dict.fromkeys([
     f"http://localhost:{_web_port}",
     f"http://127.0.0.1:{_web_port}",
     "http://localhost:8081",
     "http://127.0.0.1:8081",
     "exp://192.168.1.5:8081",
-]
+    _frontend_url,
+]))
 
 # In DEBUG, allow any localhost / 127.0.0.1 port (Next.js, Docker mapped ports like 9002, etc.)
 if DEBUG:
