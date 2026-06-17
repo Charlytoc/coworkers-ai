@@ -335,6 +335,9 @@ def complete_onboarding(request, data: OnboardingRequest):
             joined_at=timezone.now(),
         )
 
+        from core.services.workspace_starter import bootstrap_workspace
+        bootstrap_workspace(workspace=ws, created_by=user)
+
         user.onboarding_completed = True
         user.save(update_fields=["onboarding_completed"])
 

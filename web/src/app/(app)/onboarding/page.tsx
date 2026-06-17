@@ -28,6 +28,7 @@ export default function OnboardingPage() {
   const [orgName, setOrgName] = useState("");
   const [orgDescription, setOrgDescription] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
+  const [workspaceId, setWorkspaceId] = useState<number | null>(null);
 
   const [token] = useLocalStorage<string | null>({ key: TOKEN_KEY, defaultValue: null });
   const [, setUser] = useLocalStorage<AuthUser | null>({ key: USER_KEY, defaultValue: null });
@@ -54,6 +55,7 @@ export default function OnboardingPage() {
     },
     onSuccess: (data) => {
       setUser(data.user);
+      setWorkspaceId(data.workspace_id ?? null);
       setActive(2);
     },
   });
@@ -127,12 +129,22 @@ export default function OnboardingPage() {
                 </ThemeIcon>
                 <Title order={3}>You&apos;re all set!</Title>
                 <Text c="dimmed" maw={380}>
-                  Your organization <strong>{orgName}</strong> and your first workspace{" "}
-                  <strong>{workspaceName}</strong> are ready to go.
+                  Your organization <strong>{orgName}</strong> and workspace{" "}
+                  <strong>{workspaceName}</strong> are ready. A personal assistant is waiting for you.
                 </Text>
-                <Button size="md" mt="sm" onClick={() => router.replace("/dashboard")}>
-                  Go to dashboard
-                </Button>
+                <Group justify="center" mt="sm">
+                  <Button
+                    size="md"
+                    onClick={() =>
+                      router.replace(workspaceId ? `/chat?workspace=${workspaceId}` : "/chat")
+                    }
+                  >
+                    Start chatting
+                  </Button>
+                  <Button size="md" variant="default" onClick={() => router.replace("/dashboard")}>
+                    Go to dashboard
+                  </Button>
+                </Group>
               </Stack>
             </Stepper.Completed>
           </Stepper>
