@@ -177,11 +177,14 @@ function web() {
 function tunnel() {
   if ! command -v cloudflared >/dev/null 2>&1; then
     echo "cloudflared is not installed or not available in PATH" >&2
+    echo "Install from: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/" >&2
     return 1
   fi
 
+  source "$(dirname "$0")/.env" 2>/dev/null || true
   local tunnel_name="${1:-coworkers}"
-  local tunnel_url="${2:-http://localhost:9000}"
+  local tunnel_url="${2:-http://localhost:${ENTRYPOINT_PORT:-9000}}"
+  echo "tunnel → ${tunnel_name} @ ${tunnel_url}"
   cloudflared tunnel run --url "$tunnel_url" "$tunnel_name"
 }
 
