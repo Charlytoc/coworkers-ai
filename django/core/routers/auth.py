@@ -38,6 +38,7 @@ class UserResponse(Schema):
     profile_picture: Optional[str]
     is_active: bool
     is_staff: bool
+    onboarding_completed: bool
     created: str
 
 
@@ -46,6 +47,7 @@ class OrganizationResponse(Schema):
     name: str
     domain: str
     status: str
+    description: str
 
 
 class UserUpdateRequest(Schema):
@@ -75,10 +77,12 @@ def get_user_response(user: User) -> UserResponse:
             "name": user.organization.name,
             "domain": user.organization.domain,
             "status": user.organization.status,
+            "description": user.organization.description,
         },
         profile_picture=user.profile_picture.url if user.profile_picture else None,
         is_active=user.is_active,
         is_staff=user.is_staff,
+        onboarding_completed=user.onboarding_completed,
         created=user.created.isoformat(),
     )
 
@@ -89,6 +93,7 @@ def get_organization_response(org: Organization) -> OrganizationResponse:
         name=org.name,
         domain=org.domain,
         status=org.status,
+        description=org.description,
     )
 
 
@@ -272,6 +277,74 @@ def patch_active_organization(request, data: OrganizationUpdateRequest):
     org.save()
     org.refresh_from_db()
     return 200, get_organization_response(org)
+
+
+class OnboardingRequest(Schema):
+    org_name: str
+    org_description: Optional[str] = ""
+    workspace_name: str
+
+
+class OnboardingResponse(Schema):
+    user: UserResponse
+    organization: OrganizationResponse
+    workspace_id: int
+    workspace_name: str
+
+
+@router.post(
+    "/onboarding",
+    response={200: OnboardingResponse, 400: ErrorResponseSchema, 401: ErrorResponseSchema},
+    auth=[ApiKeyAuth(), django_auth],
+)
+def complete_onboarding(request, data: OnboardingRequest):
+    from django.utils import timezone
+    from core.models import OrganizationMember, Workspace, WorkspaceMember, Role
+
+    user = auth_service.get_user_from_request(request)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return 401, ErrorResponseSchema(error="Authentication required", error_code="AUTH_REQUIRED")
+
+    org_name = (data.org_name or "").strip()
+    workspace_name = (data.workspace_name or "").strip()
+    if not org_name:
+        return 400, ErrorResponseSchema(error="Organization name is required.", error_code="ORG_NAME_REQUIRED")
+    if not workspace_name:
+        return 400, ErrorResponseSchema(error="Workspace name is required.", error_code="WORKSPACE_NAME_REQUIRED")
+
+    with transaction.atomic():
+        org = user.organization
+        org.name = org_name[:Organization._meta.get_field("name").max_length]
+        org.description = (data.org_description or "").strip()
+        org.save(update_fields=["name", "description", "modified"])
+
+        role, _ = Role.objects.get_or_create(
+            organization=org,
+            slug="member",
+            defaults={"display_name": "Member", "role_capabilities": []},
+        )
+        ws = Workspace.objects.create(
+            organization=org,
+            name=workspace_name[:Workspace._meta.get_field("name").max_length],
+        )
+        WorkspaceMember.objects.create(
+            user=user,
+            workspace=ws,
+            role=role,
+            status=WorkspaceMember.Status.ACTIVE,
+            joined_at=timezone.now(),
+        )
+
+        user.onboarding_completed = True
+        user.save(update_fields=["onboarding_completed"])
+
+    user.refresh_from_db()
+    return 200, OnboardingResponse(
+        user=get_user_response(user),
+        organization=get_organization_response(org),
+        workspace_id=ws.id,
+        workspace_name=ws.name,
+    )
 
 
 @router.post("/logout", response={200: dict, 401: ErrorResponseSchema}, auth=[ApiKeyAuth(), django_auth])

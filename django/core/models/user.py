@@ -22,6 +22,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     )
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    onboarding_completed = models.BooleanField(default=False)
     organization = models.ForeignKey(
         Organization, on_delete=models.CASCADE, related_name="members"
     )

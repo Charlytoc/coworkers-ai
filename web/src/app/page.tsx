@@ -23,7 +23,7 @@ export default function Home() {
   useEffect(() => {
     const { token, user } = readStoredAuth();
     if (token && user) {
-      router.replace("/dashboard");
+      router.replace(user.onboarding_completed ? "/dashboard" : "/onboarding");
       return;
     }
     setPhase("landing");

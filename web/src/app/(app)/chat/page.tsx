@@ -308,7 +308,7 @@ export default function ChatPage() {
       setToken(data.api_token);
       setUser(data.user);
       setStatus("Not connected");
-      router.replace("/dashboard");
+      router.replace(data.user.onboarding_completed ? "/dashboard" : "/onboarding");
     },
     onError: (err: Error) => {
       setStatus(`Auth error: ${err.message}`);

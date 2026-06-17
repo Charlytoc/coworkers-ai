@@ -102,6 +102,23 @@ export interface paths {
         patch: operations["core_routers_auth_patch_active_organization"];
         trace?: never;
     };
+    "/api/auth/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Onboarding */
+        post: operations["core_routers_auth_complete_onboarding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/logout": {
         parameters: {
             query?: never;
@@ -579,6 +596,8 @@ export interface components {
             domain: string;
             /** Status */
             status: string;
+            /** Description */
+            description: string;
         };
         /** ErrorResponseSchema */
         ErrorResponseSchema: {
@@ -614,6 +633,8 @@ export interface components {
             is_active: boolean;
             /** Is Staff */
             is_staff: boolean;
+            /** Onboarding Completed */
+            onboarding_completed: boolean;
             /** Created */
             created: string;
         };
@@ -650,6 +671,27 @@ export interface components {
             name?: string | null;
             /** Domain */
             domain?: string | null;
+        };
+        /** OnboardingResponse */
+        OnboardingResponse: {
+            user: components["schemas"]["UserResponse"];
+            organization: components["schemas"]["OrganizationResponse"];
+            /** Workspace Id */
+            workspace_id: number;
+            /** Workspace Name */
+            workspace_name: string;
+        };
+        /** OnboardingRequest */
+        OnboardingRequest: {
+            /** Org Name */
+            org_name: string;
+            /**
+             * Org Description
+             * @default
+             */
+            org_description: string | null;
+            /** Workspace Name */
+            workspace_name: string;
         };
         /** AgenticChatHistoryMessage */
         AgenticChatHistoryMessage: {
@@ -1414,6 +1456,48 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
+            };
+        };
+    };
+    core_routers_auth_complete_onboarding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OnboardingRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
