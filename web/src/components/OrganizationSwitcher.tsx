@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { Group, Loader, Select, Text } from "@mantine/core";
-import { highlightedSelectOptionProps } from "@/components/highlighted-select-option";
+import { Group, Loader, Text } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalStorage } from "@mantine/hooks";
 import { fetchMyOrganizations } from "@/lib/my-organizations";
@@ -74,28 +73,11 @@ export function OrganizationSwitcher() {
     );
   }
 
-  const selectData = organizations.map((o) => ({
-    value: String(o.id),
-    label: o.name,
-  }));
+  const currentOrg = organizations.find((o) => String(o.id) === String(selectedOrgId)) ?? organizations[0];
 
   return (
-    <Select
-      size="xs"
-      w={{ base: "100%", sm: 200 }}
-      maw={240}
-      aria-label="Active organization"
-      placeholder="Organization"
-      data={selectData}
-      value={selectedOrgId != null ? String(selectedOrgId) : null}
-      onChange={(v) => {
-        if (v == null) return;
-        setSelectedOrgId(v);
-      }}
-      allowDeselect={false}
-      clearable={false}
-      comboboxProps={{ withinPortal: true, zIndex: 400 }}
-      {...highlightedSelectOptionProps}
-    />
+    <Text size="sm" fw={500} lineClamp={1} maw={200} truncate>
+      {currentOrg.name}
+    </Text>
   );
 }
