@@ -57,6 +57,17 @@ function setup-env() {
     echo "Please ask for sensitive environment variable values"
   fi
 
+  if ! grep -qE '^CONTAINER_SUFFIX=.+' "$root/.env"; then
+    local suffix
+    suffix=$(openssl rand -hex 3)
+    if grep -q '^CONTAINER_SUFFIX=' "$root/.env"; then
+      sed -i '' "s/^CONTAINER_SUFFIX=.*/CONTAINER_SUFFIX=${suffix}/" "$root/.env"
+    else
+      echo "CONTAINER_SUFFIX=${suffix}" >> "$root/.env"
+    fi
+    echo "Generated CONTAINER_SUFFIX=${suffix}"
+  fi
+
   if ! command -v uv >/dev/null 2>&1; then
     echo "uv is not installed. Install it, then re-run: ./taskfile.sh setup-env" >&2
     echo "  https://docs.astral.sh/uv/getting-started/installation/" >&2

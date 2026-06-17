@@ -1,9 +1,9 @@
-name: startup-stack
+name: coworkers-ai
 
 services:
   postgres:
     image: "postgres:17"
-    container_name: "db-container"
+    container_name: "db-${CONTAINER_SUFFIX}"
     restart: "unless-stopped"
     environment:
       - "POSTGRES_HOST_AUTH_METHOD=trust"
@@ -23,7 +23,7 @@ services:
 
   redis:
     image: redis:7
-    container_name: "redis-container"
+    container_name: "redis-${CONTAINER_SUFFIX}"
     restart: "unless-stopped"
     ports:
       - "${REDIS_HOST_PORT:-6379}:6379"
@@ -36,7 +36,7 @@ services:
       retries: 5
 
   django:
-    container_name: "django-container"
+    container_name: "django-${CONTAINER_SUFFIX}"
     env_file: .env
     build:
       context: ./django
@@ -59,7 +59,7 @@ services:
       start_period: 20s
 
   celery:
-    container_name: "celery-container"
+    container_name: "celery-${CONTAINER_SUFFIX}"
     env_file: .env
     build:
       context: ./django
@@ -72,7 +72,7 @@ services:
       - postgres
 
   celery-beat:
-    container_name: "celery-beat-container"
+    container_name: "celery-beat-${CONTAINER_SUFFIX}"
     env_file: .env
     build:
       context: ./django
@@ -85,7 +85,7 @@ services:
       - postgres
 
   flower:
-    container_name: "flower-container"
+    container_name: "flower-${CONTAINER_SUFFIX}"
     env_file: .env
     build:
       context: ./django
@@ -100,7 +100,7 @@ services:
       - celery
 
   realtime:
-    container_name: "realtime-container"
+    container_name: "realtime-${CONTAINER_SUFFIX}"
     build:
       context: ./realtime
       dockerfile: Dockerfile
@@ -117,6 +117,22 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+
+  nginx:
+    container_name: "nginx-${CONTAINER_SUFFIX}"
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    environment:
+      - WEB_PORT=${WEB_PORT:-3000}
+    ports:
+      - "${ENTRYPOINT_PORT:-9000}:80"
+    depends_on:
+      django:
+        condition: service_healthy
+      realtime:
+        condition: service_started
+    restart: unless-stopped
 
 volumes:
   redis_data:
