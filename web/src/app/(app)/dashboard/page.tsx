@@ -1,28 +1,77 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 import {
+  Box,
   Center,
   Container,
   Loader,
-  Paper,
   SimpleGrid,
   Stack,
   Text,
   Title,
+  UnstyledButton,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
-import { fetchMyOrganizations } from "@/lib/my-organizations";
 import {
-  SELECTED_ORG_ID_KEY,
+  IconMessage2,
+  IconBriefcase,
+  IconUser,
+  IconPlug,
+  IconPhoto,
+  IconSettings,
+} from "@tabler/icons-react";
+import {
+  SELECTED_WORKSPACE_ID_KEY,
   TOKEN_KEY,
   USER_KEY,
-  parseOrganization,
   readStoredAuth,
   type AuthUser,
 } from "@/lib/auth-storage";
+
+type NavCard = {
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  href: string;
+};
+
+function DashCard({ label, description, icon, href }: NavCard) {
+  return (
+    <UnstyledButton
+      component={Link}
+      href={href}
+      style={{
+        display: "block",
+        padding: "var(--mantine-spacing-md)",
+        borderRadius: "var(--mantine-radius-md)",
+        border: "1px solid var(--mantine-color-dark-5)",
+        background: "var(--mantine-color-dark-6)",
+        transition: "border-color 120ms ease, background 120ms ease",
+      }}
+      styles={{
+        root: {
+          "&:hover": {
+            borderColor: "var(--mantine-color-wine-6)",
+            background: "var(--mantine-color-dark-5)",
+          },
+        },
+      }}
+    >
+      <Stack gap={8}>
+        <Box c="wine">{icon}</Box>
+        <Text fw={600} size="sm">
+          {label}
+        </Text>
+        <Text size="xs" c="dimmed" lh={1.4}>
+          {description}
+        </Text>
+      </Stack>
+    </UnstyledButton>
+  );
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -32,13 +81,8 @@ export default function DashboardPage() {
     defaultValue: null,
     getInitialValueInEffect: true,
   });
-  const [token] = useLocalStorage<string | null>({
-    key: TOKEN_KEY,
-    defaultValue: null,
-    getInitialValueInEffect: true,
-  });
-  const [selectedOrgId] = useLocalStorage<string | null>({
-    key: SELECTED_ORG_ID_KEY,
+  const [selectedWorkspaceId] = useLocalStorage<number | null>({
+    key: SELECTED_WORKSPACE_ID_KEY,
     defaultValue: null,
     getInitialValueInEffect: true,
   });
@@ -52,25 +96,7 @@ export default function DashboardPage() {
     setSessionOk(true);
   }, [router]);
 
-  const { data: organizations, isPending } = useQuery({
-    queryKey: ["my-organizations", token],
-    queryFn: () => fetchMyOrganizations(token!),
-    enabled: Boolean(token) && sessionOk,
-    staleTime: 60_000,
-  });
-
   const displayUser = user ?? readStoredAuth().user;
-
-  const activeOrg = useMemo(() => {
-    if (!organizations?.length || selectedOrgId == null) {
-      return null;
-    }
-    return (
-      organizations.find((o) => String(o.id) === String(selectedOrgId)) ?? null
-    );
-  }, [organizations, selectedOrgId]);
-
-  const profileOrg = displayUser ? parseOrganization(displayUser.organization) : null;
 
   if (!sessionOk || !displayUser) {
     return (
@@ -84,59 +110,66 @@ export default function DashboardPage() {
     [displayUser.first_name, displayUser.last_name].filter(Boolean).join(" ").trim() ||
     displayUser.email;
 
+  const wsBase = selectedWorkspaceId ? `/workspaces/${selectedWorkspaceId}` : null;
+
+  const cards: NavCard[] = [
+    {
+      label: "Chat",
+      description: "Talk to your AI assistant, create content, and schedule tasks.",
+      icon: <IconMessage2 size={22} />,
+      href: wsBase ? `/chat?workspace=${selectedWorkspaceId}` : "/chat",
+    },
+    ...(wsBase
+      ? [
+          {
+            label: "Jobs",
+            description: "Manage job assignments and configure what your agents do.",
+            icon: <IconBriefcase size={22} />,
+            href: `${wsBase}/job-assignments`,
+          },
+          {
+            label: "Cyber identities",
+            description: "Define the personas your AI agents adopt when responding.",
+            icon: <IconUser size={22} />,
+            href: `${wsBase}/cyber-identities`,
+          },
+          {
+            label: "Accounts",
+            description: "View and connect your Telegram or Instagram accounts.",
+            icon: <IconPlug size={22} />,
+            href: `${wsBase}/integrations`,
+          },
+          {
+            label: "Artifacts",
+            description: "Browse images, text, and other content your agents have created.",
+            icon: <IconPhoto size={22} />,
+            href: `${wsBase}/artifacts`,
+          },
+        ]
+      : []),
+    {
+      label: "Settings",
+      description: "Manage your account and organization settings.",
+      icon: <IconSettings size={22} />,
+      href: "/settings",
+    },
+  ];
+
   return (
-    <Container size="md" py="lg" style={{ flex: 1 }}>
-      <Stack gap="lg">
+    <Container size="md" py="xl" style={{ flex: 1 }}>
+      <Stack gap="xl">
         <div>
-          <Title order={2}>Dashboard</Title>
-          <Text c="dimmed" mt={4}>
-            Signed in as {displayName}
+          <Title order={2}>Welcome back, {displayName.split(" ")[0]}</Title>
+          <Text c="dimmed" mt={4} size="sm">
+            What would you like to do today?
           </Text>
         </div>
 
-        <Text size="sm" c="dimmed">
-          Use the organization menu in the header to switch context. API requests send the
-          selected organization id in the X-Org-Id header.
-        </Text>
-
-        <Paper withBorder radius="md" p="md">
-          <Stack gap="md">
-            <Title order={4}>Active organization</Title>
-            {isPending && (
-              <Center py="md">
-                <Loader size="sm" />
-              </Center>
-            )}
-            {!isPending && activeOrg && (
-              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-                <div>
-                  <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                    Name
-                  </Text>
-                  <Text>{activeOrg.name}</Text>
-                </div>
-                <div>
-                  <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                    Domain
-                  </Text>
-                  <Text>{activeOrg.domain}</Text>
-                </div>
-                <div>
-                  <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                    Status
-                  </Text>
-                  <Text>{activeOrg.status}</Text>
-                </div>
-              </SimpleGrid>
-            )}
-            {!isPending && !activeOrg && profileOrg?.id != null && (
-              <Text size="sm" c="dimmed">
-                Loading organization context… If this persists, open the header menu once your
-                memberships have loaded.
-              </Text>
-            )}
-          </Stack>
-        </Paper>
+        <SimpleGrid cols={{ base: 1, xs: 2, sm: 3 }} spacing="sm">
+          {cards.map((card) => (
+            <DashCard key={card.href} {...card} />
+          ))}
+        </SimpleGrid>
       </Stack>
     </Container>
   );

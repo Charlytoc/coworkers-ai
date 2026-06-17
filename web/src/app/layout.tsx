@@ -4,6 +4,7 @@ import "@mantine/core/styles.css";
 
 import { ColorSchemeScript, MantineProvider, mantineHtmlProps } from "@mantine/core";
 import { QueryProviders } from "@/components/QueryProviders";
+import { theme } from "@/lib/theme";
 import "./globals.css";
 
 export const metadata = {
@@ -23,7 +24,7 @@ export default function RootLayout({
       </head>
       <body>
         <QueryProviders>
-          <MantineProvider defaultColorScheme="dark">{children}</MantineProvider>
+          <MantineProvider theme={theme} defaultColorScheme="dark">{children}</MantineProvider>
         </QueryProviders>
       </body>
     </html>

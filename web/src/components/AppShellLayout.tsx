@@ -17,6 +17,15 @@ import {
   Title,
 } from "@mantine/core";
 import { useDisclosure, useLocalStorage } from "@mantine/hooks";
+import {
+  IconLayoutDashboard,
+  IconMessage2,
+  IconUser,
+  IconBriefcase,
+  IconPlug,
+  IconPhoto,
+  IconSettings,
+} from "@tabler/icons-react";
 import { OrganizationSwitcher } from "@/components/OrganizationSwitcher";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import {
@@ -164,32 +173,11 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar p="xs">
-        <Box hiddenFrom="sm" mb="md">
+      <AppShell.Navbar p="xs" style={{ display: "flex", flexDirection: "column" }}>
+        <Box hiddenFrom="sm" mb="xs">
           <OrganizationSwitcher />
         </Box>
-        <NavLink
-          component={Link}
-          href="/dashboard"
-          label="Dashboard"
-          active={pathname === "/dashboard"}
-          onClick={() => closeMobileNav()}
-        />
-        <NavLink
-          component={Link}
-          href="/chat"
-          label="Chat"
-          active={pathname === "/chat"}
-          onClick={() => closeMobileNav()}
-        />
-        <NavLink
-          component={Link}
-          href="/settings"
-          label="Settings"
-          active={pathname === "/settings" || pathname?.startsWith("/settings/")}
-          onClick={() => closeMobileNav()}
-        />
-        <Text size="xs" fw={700} c="dimmed" tt="uppercase" mt="md" mb={4} px="xs">
+        <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={4} px="xs">
           Workspace
         </Text>
         <Box mb="xs">
@@ -197,20 +185,27 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
         </Box>
         <NavLink
           component={Link}
-          href="/workspace"
-          label="Workspace home"
-          active={pathname === "/workspace" || Boolean(pathname?.startsWith("/workspace/"))}
+          href="/dashboard"
+          label="Dashboard"
+          leftSection={<IconLayoutDashboard size={16} />}
+          active={pathname === "/dashboard"}
+          onClick={() => closeMobileNav()}
+        />
+        <NavLink
+          component={Link}
+          href="/chat"
+          label="Chat"
+          leftSection={<IconMessage2 size={16} />}
+          active={pathname === "/chat"}
           onClick={() => closeMobileNav()}
         />
         {workspaceNavPrefix ? (
           <>
-            <Text size="xs" fw={700} c="dimmed" tt="uppercase" mt="md" mb={4} px="xs">
-              In this workspace
-            </Text>
             <NavLink
               component={Link}
               href={`${workspaceNavPrefix}/cyber-identities`}
               label="Cyber identities"
+              leftSection={<IconUser size={16} />}
               active={workspaceSectionActive("cyber-identities")}
               onClick={() => closeMobileNav()}
             />
@@ -218,6 +213,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
               component={Link}
               href={`${workspaceNavPrefix}/job-assignments`}
               label="Jobs"
+              leftSection={<IconBriefcase size={16} />}
               active={workspaceSectionActive("job-assignments")}
               onClick={() => closeMobileNav()}
             />
@@ -225,25 +221,29 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
               component={Link}
               href={`${workspaceNavPrefix}/integrations`}
               label="Accounts"
+              leftSection={<IconPlug size={16} />}
               active={workspaceSectionActive("integrations")}
-              onClick={() => closeMobileNav()}
-            />
-            <NavLink
-              component={Link}
-              href={`${workspaceNavPrefix}/connect-integration`}
-              label="Connect account"
-              active={workspaceSectionActive("connect-integration")}
               onClick={() => closeMobileNav()}
             />
             <NavLink
               component={Link}
               href={`${workspaceNavPrefix}/artifacts`}
               label="Artifacts"
+              leftSection={<IconPhoto size={16} />}
               active={workspaceSectionActive("artifacts")}
               onClick={() => closeMobileNav()}
             />
           </>
         ) : null}
+        <NavLink
+          component={Link}
+          href="/settings"
+          label="Settings"
+          leftSection={<IconSettings size={16} />}
+          active={pathname === "/settings" || pathname?.startsWith("/settings/")}
+          onClick={() => closeMobileNav()}
+          mt="auto"
+        />
       </AppShell.Navbar>
 
       <AppShell.Main
