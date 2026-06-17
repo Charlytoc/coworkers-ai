@@ -42,6 +42,17 @@ _site_hostname = urlparse(SITE_URL).hostname
 _site_allowed = [_site_hostname] if _site_hostname else []
 ALLOWED_HOSTS = list(dict.fromkeys(_base_allowed_hosts + _extra_allowed_hosts + _site_allowed))
 
+_frontend_origin = os.getenv("FRONTEND_URL", "").rstrip("/")
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys([
+    o for o in [
+        "http://localhost",
+        "http://127.0.0.1",
+        SITE_URL,
+        _frontend_origin,
+    ] + [f"https://{h}" for h in _extra_allowed_hosts if h]
+    if o
+]))
+
 # Application definition
 
 INSTALLED_APPS = [

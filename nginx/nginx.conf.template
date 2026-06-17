@@ -30,6 +30,18 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    location /static/ {
+        proxy_pass http://django;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /media/ {
+        proxy_pass http://django;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     # Realtime server — socket.io clients connect to /socket.io/ on the root domain
     location /socket.io/ {
         proxy_pass http://realtime/socket.io/;

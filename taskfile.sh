@@ -84,6 +84,8 @@ function setup-env() {
 }
 
 function setup-django() {
+  local root
+  root="$(cd "$(dirname "$0")" && pwd)"
   migrate
   # Create default organization first
   docker compose -f docker-compose.yml exec django python manage.py shell -c "
@@ -96,6 +98,12 @@ org, created = Organization.objects.get_or_create(
 print(f'Organization: {\"Created\" if created else \"Already exists\"} - {org.name}')
 "
   # Create superuser with organization + OrganizationMember (IAM membership row)
+  local su_email su_password
+  su_email=$(grep -E '^DJANGO_SUPERUSER_EMAIL=' "$root/.env" | cut -d= -f2 | tr -d '[:space:]')
+  su_password=$(grep -E '^DJANGO_SUPERUSER_PASSWORD=' "$root/.env" | cut -d= -f2 | tr -d '[:space:]')
+  su_email="${su_email:-admin@localhost.com}"
+  su_password="${su_password:-p}"
+
   docker compose -f docker-compose.yml exec django python manage.py shell -c "
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
@@ -104,9 +112,9 @@ from core.models import Organization, OrganizationMember, User
 
 org = Organization.objects.get(name='Startup')
 user, created = User.objects.get_or_create(
-    email='admin@localhost.com',
+    email='${su_email}',
     defaults={
-        'password': make_password('p'),
+        'password': make_password('${su_password}'),
         'is_staff': True,
         'is_superuser': True,
         'organization': org,
