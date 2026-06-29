@@ -49,7 +49,7 @@ export default function ConnectIntegrationPage() {
   const [botToken, setBotToken] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
-  const [igLoading, setIgLoading] = useState(false);
+  const [igLoading, setIgLoading] = useState<"instagram_login" | "facebook_login" | null>(null);
   const [igError, setIgError] = useState<string | null>(
     searchParams.get("instagram_error"),
   );
@@ -72,19 +72,20 @@ export default function ConnectIntegrationPage() {
     [identities],
   );
 
-  async function connectInstagram() {
+  async function connectInstagram(authMethod: "instagram_login" | "facebook_login") {
     if (!token || !orgId || !cyberIdentityId) return;
     setIgError(null);
-    setIgLoading(true);
+    setIgLoading(authMethod);
     try {
       const { oauth_url } = await getInstagramOAuthUrl(token, orgId, workspaceId, {
         cyber_identity_id: cyberIdentityId,
         use_case: useCase.trim(),
+        auth_method: authMethod,
       });
       window.location.href = oauth_url;
     } catch (err) {
       setIgError((err as Error).message);
-      setIgLoading(false);
+      setIgLoading(null);
     }
   }
 
@@ -262,11 +263,6 @@ export default function ConnectIntegrationPage() {
         <Paper withBorder radius="md" p="lg">
           <Stack gap="md">
             <Title order={3}>Instagram</Title>
-            <Text size="sm" c="dimmed">
-              Connect an Instagram Business or Creator account via Facebook Login. You will be
-              redirected to Meta to authorize the app, then brought back here automatically.
-              Make sure your Instagram account is linked to a Facebook Page.
-            </Text>
             <Text size="xs" c="dimmed">
               Need help?{" "}
               <Anchor
@@ -283,15 +279,47 @@ export default function ConnectIntegrationPage() {
                 {igError}
               </Alert>
             ) : null}
-            <Button
-              onClick={connectInstagram}
-              loading={igLoading}
-              disabled={!token || !orgId || !onboardingReady}
-              variant="gradient"
-              gradient={{ from: "grape", to: "pink", deg: 135 }}
-            >
-              Connect Instagram account
-            </Button>
+
+            <Paper withBorder radius="sm" p="md">
+              <Stack gap="sm">
+                <Text fw={600} size="sm">
+                  Connect for publish &amp; DMs
+                </Text>
+                <Text size="sm" c="dimmed">
+                  Instagram Login only. No Facebook Page required. Publish feed posts and receive or reply to DMs.
+                  Post analytics, comment moderation, and delete are not available on this path.
+                </Text>
+                <Button
+                  onClick={() => connectInstagram("instagram_login")}
+                  loading={igLoading === "instagram_login"}
+                  disabled={!token || !orgId || !onboardingReady || igLoading !== null}
+                  variant="light"
+                >
+                  Connect with Instagram Login
+                </Button>
+              </Stack>
+            </Paper>
+
+            <Paper withBorder radius="sm" p="md">
+              <Stack gap="sm">
+                <Text fw={600} size="sm">
+                  Connect full Instagram management
+                </Text>
+                <Text size="sm" c="dimmed">
+                  Facebook Login for Business. Requires a Professional Instagram account linked to a Facebook Page
+                  you manage. Enables insights, comments, delete, and future Facebook or Messenger features.
+                </Text>
+                <Button
+                  onClick={() => connectInstagram("facebook_login")}
+                  loading={igLoading === "facebook_login"}
+                  disabled={!token || !orgId || !onboardingReady || igLoading !== null}
+                  variant="gradient"
+                  gradient={{ from: "grape", to: "pink", deg: 135 }}
+                >
+                  Connect with Facebook Login
+                </Button>
+              </Stack>
+            </Paper>
           </Stack>
         </Paper>
       </Stack>

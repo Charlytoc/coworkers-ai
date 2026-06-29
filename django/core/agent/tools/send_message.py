@@ -10,7 +10,12 @@ from core.agent.base import AgentTool, AgentToolConfig
 from core.models import Artifact, Conversation, CyberIdentity, IntegrationAccount
 from core.schemas.send_target import ResolvedSendTarget, SendTargetProvider
 from core.services.conversations import append_assistant_message, get_or_create_active_conversation
-from core.services.instagram_service import get_access_token, get_ig_user_id, instagram_send_message
+from core.services.instagram_service import (
+    get_access_token,
+    get_ig_user_id,
+    graph_base_for_account,
+    instagram_send_message,
+)
 from core.services.integration_senders import upsert_sender
 from core.schemas.integration_account import SenderApprovalStatus
 from core.services.redis_publisher import publish_to_bridge
@@ -308,7 +313,13 @@ def make_send_message_tool(
             if not access or not ig_uid:
                 return "Error: Instagram token or ig_user_id not configured."
             try:
-                sent = instagram_send_message(access, ig_uid, target.external_thread_id, text)
+                sent = instagram_send_message(
+                    access,
+                    ig_uid,
+                    target.external_thread_id,
+                    text,
+                    graph_base=graph_base_for_account(account),
+                )
             except ValueError as exc:
                 return f"Error: {exc}"
             _append_if_same_thread(
@@ -439,7 +450,13 @@ def make_send_direct_message_tool(
             if not access or not ig_uid:
                 return "Error: Instagram token or ig_user_id not configured."
             try:
-                sent = instagram_send_message(access, ig_uid, target.external_thread_id, text)
+                sent = instagram_send_message(
+                    access,
+                    ig_uid,
+                    target.external_thread_id,
+                    text,
+                    graph_base=graph_base_for_account(account),
+                )
             except ValueError as exc:
                 return f"Error: {exc}"
             upsert_sender(

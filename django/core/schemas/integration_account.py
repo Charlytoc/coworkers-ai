@@ -95,7 +95,26 @@ class TelegramAccountConfig(BaseIntegrationAccountConfig):
     webhook_path_token: str | None = None
 
 
+class InstagramAuthMethod(str, Enum):
+    INSTAGRAM_LOGIN = "instagram_login"
+    FACEBOOK_LOGIN = "facebook_login"
+
+
+class InstagramCapability(str, Enum):
+    BASIC = "basic"
+    PUBLISH = "publish"
+    DM = "dm"
+    COMMENTS = "comments"
+    INSIGHTS = "insights"
+    DELETE = "delete"
+
+
 class InstagramAccountConfig(BaseIntegrationAccountConfig):
     ig_user_id: str | None = None
     ig_username: str | None = None
     ig_oauth_graph_me_id: str | None = None
+    auth_method: InstagramAuthMethod = InstagramAuthMethod.INSTAGRAM_LOGIN
+    facebook_page_id: str | None = None
+    facebook_page_name: str | None = None
+    granted_scopes: list[str] = Field(default_factory=list)
+    capabilities: list[str] = Field(default_factory=list)

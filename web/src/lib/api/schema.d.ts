@@ -532,12 +532,65 @@ export interface paths {
         };
         /**
          * Instagram Callback
-         * @description Meta redirects here after the user authorizes (or denies) the Instagram OAuth request.
-         *     We exchange the code, create IntegrationAccount rows, then redirect to the frontend.
+         * @description Meta redirects here after Instagram Business Login authorization.
          */
         get: operations["core_routers_integrations_instagram_instagram_callback"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/instagram/facebook/callback/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Facebook Callback
+         * @description Meta redirects here after Facebook Login for Business authorization.
+         */
+        get: operations["core_routers_integrations_instagram_facebook_callback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/instagram/workspaces/{workspace_id}/instagram/facebook-pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Facebook Pages Pending */
+        get: operations["core_routers_integrations_instagram_list_facebook_pages_pending"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/instagram/workspaces/{workspace_id}/instagram/facebook-pages/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Facebook Page Selection */
+        post: operations["core_routers_integrations_instagram_complete_facebook_page_selection"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1213,6 +1266,12 @@ export interface components {
             cyber_identity_id: string;
             /** Use Case */
             use_case: string;
+            /**
+             * Auth Method
+             * @default instagram_login
+             * @enum {string}
+             */
+            auth_method: "instagram_login" | "facebook_login";
         };
         /** _CallbackParams */
         _CallbackParams: {
@@ -1224,6 +1283,43 @@ export interface components {
             error?: string | null;
             /** Error Description */
             error_description?: string | null;
+        };
+        /** FacebookPageOption */
+        FacebookPageOption: {
+            /** Page Id */
+            page_id: string;
+            /** Page Name */
+            page_name: string;
+            /** Ig User Id */
+            ig_user_id: string;
+            /** Ig Username */
+            ig_username: string;
+            /** Display Label */
+            display_label: string;
+        };
+        /** FacebookPagesPendingResponse */
+        FacebookPagesPendingResponse: {
+            /** Workspace Id */
+            workspace_id: number;
+            /** Pages */
+            pages: components["schemas"]["FacebookPageOption"][];
+        };
+        /** FacebookPageCompleteResponse */
+        FacebookPageCompleteResponse: {
+            /**
+             * Integration Account Id
+             * Format: uuid
+             */
+            integration_account_id: string;
+            /** Display Name */
+            display_name: string;
+        };
+        /** FacebookPageCompleteRequest */
+        FacebookPageCompleteRequest: {
+            /** Pending */
+            pending: string;
+            /** Page Id */
+            page_id: string;
         };
     };
     responses: never;
@@ -3006,6 +3102,151 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    core_routers_integrations_instagram_facebook_callback: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+                error_description?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    core_routers_integrations_instagram_list_facebook_pages_pending: {
+        parameters: {
+            query: {
+                pending: string;
+            };
+            header?: never;
+            path: {
+                workspace_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacebookPagesPendingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
+            };
+        };
+    };
+    core_routers_integrations_instagram_complete_facebook_page_selection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FacebookPageCompleteRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacebookPageCompleteResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
             };
         };
     };

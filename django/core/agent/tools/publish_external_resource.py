@@ -16,6 +16,7 @@ from core.schemas.job_assignment import JobAssignmentAction
 from core.services.instagram_service import (
     get_access_token,
     get_ig_user_id,
+    graph_base_for_account,
     instagram_publish_image_post,
 )
 
@@ -135,6 +136,7 @@ def _publish_instagram_post(
         ig_user_id=ig_uid,
         image_url=image_url,
         caption=final_caption,
+        graph_base=graph_base_for_account(account),
     )
     published_id = str(response.get("published", {}).get("id") or "").strip()
     if not published_id:

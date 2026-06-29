@@ -1,8 +1,4 @@
-"""Instagram Business Login API helpers, OAuth flow, webhook handling, and IntegrationAccount conventions.
-
-Uses the new Instagram Business Login (instagram.com/oauth/authorize) introduced in 2024,
-NOT the deprecated Facebook Login / facebook.com/dialog/oauth path.
-"""
+"""Instagram integration: Instagram Business Login, Facebook Login, webhooks, and Graph helpers."""
 
 from __future__ import annotations
 
@@ -25,7 +21,14 @@ from core.integrations.event_types import INSTAGRAM_DM_MESSAGE
 from core.models import IntegrationAccount, IntegrationEvent, Workspace
 from core.schemas.integration_account import (
     INTEGRATION_ONBOARDING_CONFIG_KEY,
+    InstagramAuthMethod,
     IntegrationAccountOnboarding,
+)
+from core.services.instagram_capabilities import (
+    INSTAGRAM_LOGIN_SCOPES,
+    capabilities_from_scopes,
+    default_scopes_for_auth_method,
+    resolve_auth_method,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +37,7 @@ logger = logging.getLogger(__name__)
 INSTAGRAM_OAUTH_URL = "https://www.instagram.com/oauth/authorize"
 INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token"
 INSTAGRAM_GRAPH_BASE = "https://graph.instagram.com"
+FACEBOOK_GRAPH_BASE = "https://graph.facebook.com"
 INSTAGRAM_GRAPH_API_VERSION = "v25.0"
 
 # Keys in IntegrationAccount.auth (encrypted)
@@ -43,17 +47,17 @@ AUTH_ACCESS_TOKEN = "access_token"
 CONFIG_IG_USER_ID = "ig_user_id"
 CONFIG_IG_USERNAME = "ig_username"
 CONFIG_IG_OAUTH_GRAPH_ME_ID = "ig_oauth_graph_me_id"
+CONFIG_AUTH_METHOD = "auth_method"
+CONFIG_FACEBOOK_PAGE_ID = "facebook_page_id"
+CONFIG_FACEBOOK_PAGE_NAME = "facebook_page_name"
+CONFIG_GRANTED_SCOPES = "granted_scopes"
+CONFIG_CAPABILITIES = "capabilities"
 
 # Redis cache key for OAuth state
 _OAUTH_STATE_TTL = 600  # 10 minutes
 _OAUTH_STATE_PREFIX = "ig_oauth_state:"
 
-# Scopes for Instagram Business Login
-INSTAGRAM_OAUTH_SCOPES = [
-    "instagram_business_basic",
-    "instagram_business_manage_messages",
-    "instagram_business_content_publish",
-]
+INSTAGRAM_OAUTH_SCOPES = INSTAGRAM_LOGIN_SCOPES
 
 
 def _oauth_response_for_log(data: dict[str, Any]) -> dict[str, Any]:
@@ -105,6 +109,7 @@ def store_oauth_state(
     user_id: int,
     cyber_identity_id: str,
     use_case: str,
+    auth_method: str = InstagramAuthMethod.INSTAGRAM_LOGIN.value,
 ) -> str:
     """Generate a random state token, store workspace/user/onboarding in cache, return the token."""
     token = secrets.token_urlsafe(32)
@@ -115,6 +120,7 @@ def store_oauth_state(
             "user_id": user_id,
             "cyber_identity_id": cyber_identity_id,
             "use_case": use_case,
+            "auth_method": auth_method,
         },
         _OAUTH_STATE_TTL,
     )
@@ -151,6 +157,17 @@ def build_instagram_oauth_url(state_token: str) -> str:
         "state": state_token,
     }
     return f"{INSTAGRAM_OAUTH_URL}?{urlencode(params)}"
+
+
+def graph_base_for_account(account: IntegrationAccount) -> str:
+    cfg = account.config or {}
+    if resolve_auth_method(cfg.get(CONFIG_AUTH_METHOD)) == InstagramAuthMethod.FACEBOOK_LOGIN:
+        return FACEBOOK_GRAPH_BASE
+    return INSTAGRAM_GRAPH_BASE
+
+
+def account_auth_method(account: IntegrationAccount) -> InstagramAuthMethod:
+    return resolve_auth_method((account.config or {}).get(CONFIG_AUTH_METHOD))
 
 
 # ---------------------------------------------------------------------------
@@ -241,11 +258,16 @@ def instagram_get_user_info(access_token: str) -> dict[str, Any]:
 
 
 def instagram_send_message(
-    access_token: str, ig_user_id: str, recipient_igsid: str, text: str
+    access_token: str,
+    ig_user_id: str,
+    recipient_igsid: str,
+    text: str,
+    *,
+    graph_base: str = INSTAGRAM_GRAPH_BASE,
 ) -> dict[str, Any]:
     """Send a text DM from the IG Business Account to recipient_igsid."""
     resp = requests.post(
-        f"{INSTAGRAM_GRAPH_BASE}/{INSTAGRAM_GRAPH_API_VERSION}/{ig_user_id}/messages",
+        f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{ig_user_id}/messages",
         headers={"Authorization": f"Bearer {access_token}"},
         json={
             "recipient": {"id": recipient_igsid},
@@ -287,6 +309,7 @@ def instagram_create_image_media_container(
     ig_user_id: str,
     image_url: str,
     caption: str = "",
+    graph_base: str = INSTAGRAM_GRAPH_BASE,
 ) -> dict[str, Any]:
     uid = str(ig_user_id or "").strip()
     url = str(image_url or "").strip()
@@ -301,7 +324,7 @@ def instagram_create_image_media_container(
     }
     if caption.strip():
         payload["caption"] = caption.strip()
-    endpoint = f"{INSTAGRAM_GRAPH_BASE}/{INSTAGRAM_GRAPH_API_VERSION}/{uid}/media"
+    endpoint = f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{uid}/media"
     logger.info(
         "instagram media container request ig_user_id=%s media_type=IMAGE "
         "caption_len=%s image_url=%s endpoint=%s",
@@ -346,12 +369,12 @@ def instagram_create_image_media_container(
 
 
 def instagram_get_media_container_status(
-    *, access_token: str, container_id: str
+    *, access_token: str, container_id: str, graph_base: str = INSTAGRAM_GRAPH_BASE
 ) -> dict[str, Any]:
     cid = str(container_id or "").strip()
     if not access_token or not cid:
         raise ValueError("Instagram token or container_id not configured")
-    url = f"{INSTAGRAM_GRAPH_BASE}/{INSTAGRAM_GRAPH_API_VERSION}/{cid}"
+    url = f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{cid}"
     resp = requests.get(
         url,
         params={"fields": "status_code", "access_token": access_token},
@@ -377,6 +400,7 @@ def instagram_wait_for_media_container_ready_for_publish(
     container_id: str,
     max_attempts: int = 40,
     interval_seconds: float = 3.0,
+    graph_base: str = INSTAGRAM_GRAPH_BASE,
 ) -> str:
     """Poll ``status_code`` until Meta marks the container ready for ``media_publish``.
 
@@ -386,7 +410,9 @@ def instagram_wait_for_media_container_ready_for_publish(
     cid = str(container_id or "").strip()
     last_status = ""
     for attempt in range(1, max_attempts + 1):
-        data = instagram_get_media_container_status(access_token=access_token, container_id=cid)
+        data = instagram_get_media_container_status(
+            access_token=access_token, container_id=cid, graph_base=graph_base
+        )
         raw = data.get("status_code")
         last_status = str(raw).strip().upper() if raw is not None else ""
         if last_status == "FINISHED":
@@ -421,6 +447,7 @@ def instagram_publish_media_container(
     access_token: str,
     ig_user_id: str,
     creation_id: str,
+    graph_base: str = INSTAGRAM_GRAPH_BASE,
 ) -> dict[str, Any]:
     uid = str(ig_user_id or "").strip()
     cid = str(creation_id or "").strip()
@@ -428,7 +455,7 @@ def instagram_publish_media_container(
         raise ValueError("Instagram token or ig_user_id not configured")
     if not cid:
         raise ValueError("creation_id is required")
-    endpoint = f"{INSTAGRAM_GRAPH_BASE}/{INSTAGRAM_GRAPH_API_VERSION}/{uid}/media_publish"
+    endpoint = f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{uid}/media_publish"
     logger.info(
         "instagram media publish request ig_user_id=%s creation_id=%s endpoint=%s",
         uid,
@@ -476,22 +503,26 @@ def instagram_publish_image_post(
     ig_user_id: str,
     image_url: str,
     caption: str = "",
+    graph_base: str = INSTAGRAM_GRAPH_BASE,
 ) -> dict[str, Any]:
     container = instagram_create_image_media_container(
         access_token=access_token,
         ig_user_id=ig_user_id,
         image_url=image_url,
         caption=caption,
+        graph_base=graph_base,
     )
     creation_id = str(container["id"])
     instagram_wait_for_media_container_ready_for_publish(
         access_token=access_token,
         container_id=creation_id,
+        graph_base=graph_base,
     )
     published = instagram_publish_media_container(
         access_token=access_token,
         ig_user_id=ig_user_id,
         creation_id=creation_id,
+        graph_base=graph_base,
     )
     return {"container": container, "published": published}
 
@@ -512,7 +543,7 @@ def _instagram_webhook_subscribed_fields_csv() -> str:
 
 
 def instagram_enable_webhook_subscriptions(
-    *, access_token: str, ig_user_id: str
+    *, access_token: str, ig_user_id: str, graph_base: str = INSTAGRAM_GRAPH_BASE
 ) -> dict[str, Any]:
     """Enable Meta→app webhook delivery for this Instagram professional account.
 
@@ -523,7 +554,7 @@ def instagram_enable_webhook_subscriptions(
     if not access_token or not uid:
         return {"success": False, "error": "missing_token_or_ig_user_id"}
     fields = _instagram_webhook_subscribed_fields_csv()
-    url = f"{INSTAGRAM_GRAPH_BASE}/{INSTAGRAM_GRAPH_API_VERSION}/{uid}/subscribed_apps"
+    url = f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{uid}/subscribed_apps"
     resp = requests.post(
         url,
         params={"subscribed_fields": fields, "access_token": access_token},
@@ -571,13 +602,13 @@ def instagram_enable_webhook_subscriptions(
 
 
 def instagram_disable_webhook_subscriptions(
-    *, access_token: str, ig_user_id: str
+    *, access_token: str, ig_user_id: str, graph_base: str = INSTAGRAM_GRAPH_BASE
 ) -> dict[str, Any]:
     """Remove this app's webhook subscription for the IG account (best-effort; same path as POST)."""
     uid = str(ig_user_id or "").strip()
     if not access_token or not uid:
         return {"success": False, "error": "missing_token_or_ig_user_id"}
-    url = f"{INSTAGRAM_GRAPH_BASE}/{INSTAGRAM_GRAPH_API_VERSION}/{uid}/subscribed_apps"
+    url = f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{uid}/subscribed_apps"
     resp = requests.delete(url, params={"access_token": access_token}, timeout=30)
     try:
         data = resp.json()
@@ -680,7 +711,7 @@ def instagram_fetch_participant_profile(
             u = raw_s.lstrip("@")
             return {"username": u} if u else None
 
-    url = f"{INSTAGRAM_GRAPH_BASE}/{INSTAGRAM_GRAPH_API_VERSION}/{igsid}"
+    url = f"{graph_base_for_account(account)}/{INSTAGRAM_GRAPH_API_VERSION}/{igsid}"
     resp = requests.get(
         url,
         params={"fields": "name,username", "access_token": access_token},
@@ -770,15 +801,22 @@ def connect_instagram_account(
     ig_username: str,
     ig_oauth_graph_me_id: str | None = None,
     onboarding: IntegrationAccountOnboarding | None = None,
+    auth_method: InstagramAuthMethod = InstagramAuthMethod.INSTAGRAM_LOGIN,
+    facebook_page_id: str | None = None,
+    facebook_page_name: str | None = None,
+    granted_scopes: list[str] | None = None,
 ) -> IntegrationAccount:
     """Create or update an IntegrationAccount for a connected Instagram Business account."""
     uid = getattr(user, "pk", None)
+    scopes = granted_scopes if granted_scopes is not None else default_scopes_for_auth_method(auth_method)
+    caps = capabilities_from_scopes(auth_method=auth_method, granted_scopes=scopes)
     logger.info(
-        "instagram connect workspace_id=%s user_id=%s ig_user_id=%s ig_username=%s",
+        "instagram connect workspace_id=%s user_id=%s ig_user_id=%s ig_username=%s auth_method=%s",
         workspace.id,
         uid,
         ig_user_id,
         ig_username or "",
+        auth_method.value,
     )
     display_name = f"@{ig_username}" if ig_username else ig_user_id
 
@@ -786,12 +824,21 @@ def connect_instagram_account(
         cfg: dict[str, Any] = {
             CONFIG_IG_USER_ID: ig_user_id,
             CONFIG_IG_USERNAME: ig_username,
+            CONFIG_AUTH_METHOD: auth_method.value,
+            CONFIG_GRANTED_SCOPES: scopes,
+            CONFIG_CAPABILITIES: caps,
         }
         if ig_oauth_graph_me_id and ig_oauth_graph_me_id != ig_user_id:
             cfg[CONFIG_IG_OAUTH_GRAPH_ME_ID] = ig_oauth_graph_me_id
+        if facebook_page_id:
+            cfg[CONFIG_FACEBOOK_PAGE_ID] = facebook_page_id
+        if facebook_page_name:
+            cfg[CONFIG_FACEBOOK_PAGE_NAME] = facebook_page_name
         if onboarding is not None:
             cfg[INTEGRATION_ONBOARDING_CONFIG_KEY] = onboarding.model_dump(mode="json")
         return cfg
+
+    graph_base = FACEBOOK_GRAPH_BASE if auth_method == InstagramAuthMethod.FACEBOOK_LOGIN else INSTAGRAM_GRAPH_BASE
 
     with transaction.atomic():
         account, _created = IntegrationAccount.objects.get_or_create(
@@ -812,6 +859,17 @@ def connect_instagram_account(
             cfg.pop("me_accounts_snapshot", None)
             cfg[CONFIG_IG_USER_ID] = ig_user_id
             cfg[CONFIG_IG_USERNAME] = ig_username
+            cfg[CONFIG_AUTH_METHOD] = auth_method.value
+            cfg[CONFIG_GRANTED_SCOPES] = scopes
+            cfg[CONFIG_CAPABILITIES] = caps
+            if facebook_page_id:
+                cfg[CONFIG_FACEBOOK_PAGE_ID] = facebook_page_id
+            else:
+                cfg.pop(CONFIG_FACEBOOK_PAGE_ID, None)
+            if facebook_page_name:
+                cfg[CONFIG_FACEBOOK_PAGE_NAME] = facebook_page_name
+            else:
+                cfg.pop(CONFIG_FACEBOOK_PAGE_NAME, None)
             if ig_oauth_graph_me_id and ig_oauth_graph_me_id != ig_user_id:
                 cfg[CONFIG_IG_OAUTH_GRAPH_ME_ID] = ig_oauth_graph_me_id
             elif CONFIG_IG_OAUTH_GRAPH_ME_ID in cfg and (
@@ -839,7 +897,7 @@ def connect_instagram_account(
     )
 
     sub = instagram_enable_webhook_subscriptions(
-        access_token=access_token, ig_user_id=ig_user_id
+        access_token=access_token, ig_user_id=ig_user_id, graph_base=graph_base
     )
     if not sub.get("success"):
         logger.warning(
@@ -860,7 +918,7 @@ def disconnect_instagram_account(account: IntegrationAccount) -> None:
     ig_uid = str(account.external_account_id or "").strip() or get_ig_user_id(account)
     if token and ig_uid:
         unsub = instagram_disable_webhook_subscriptions(
-            access_token=token, ig_user_id=ig_uid
+            access_token=token, ig_user_id=ig_uid, graph_base=graph_base_for_account(account)
         )
         if not unsub.get("success"):
             logger.warning(
@@ -1311,7 +1369,8 @@ class InstagramIntegrationService:
     instagram_disable_webhook_subscriptions = staticmethod(
         instagram_disable_webhook_subscriptions
     )
-    get_access_token = staticmethod(get_access_token)
+    graph_base_for_account = staticmethod(graph_base_for_account)
+    account_auth_method = staticmethod(account_auth_method)
     get_ig_user_id = staticmethod(get_ig_user_id)
     connect_instagram_account = staticmethod(connect_instagram_account)
     disconnect_instagram_account = staticmethod(disconnect_instagram_account)

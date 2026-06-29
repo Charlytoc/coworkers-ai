@@ -159,6 +159,15 @@ export default function IntegrationAccountDetailPage() {
     }
   }, [account]);
 
+  const instagramAuthMethod =
+    account?.provider === "instagram" && typeof account.config?.auth_method === "string"
+      ? account.config.auth_method
+      : null;
+  const instagramCapabilities = useMemo(() => {
+    const raw = account?.config?.capabilities;
+    return Array.isArray(raw) ? raw.filter((c): c is string => typeof c === "string") : [];
+  }, [account?.config?.capabilities]);
+
   if (!sessionOk || !displayUser) {
     return (
       <Center style={{ flex: 1 }}>
@@ -197,6 +206,20 @@ export default function IntegrationAccountDetailPage() {
             <Group gap="xs" mt={4}>
               <Badge variant="light">{account.provider}</Badge>
               {statusBadge(account.status)}
+              {instagramAuthMethod === "facebook_login" ? (
+                <Badge color="blue" variant="light">
+                  Facebook Login
+                </Badge>
+              ) : instagramAuthMethod === "instagram_login" ? (
+                <Badge color="grape" variant="light">
+                  Instagram Login
+                </Badge>
+              ) : null}
+              {instagramCapabilities.map((cap) => (
+                <Badge key={cap} variant="outline" size="sm">
+                  {cap}
+                </Badge>
+              ))}
               <Text size="xs" c="dimmed">
                 External id:{" "}
                 <Text span ff="monospace">
