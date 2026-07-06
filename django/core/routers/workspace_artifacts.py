@@ -6,9 +6,10 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 from ninja.security import django_auth
 
-from core.models import Artifact, MediaObject, Workspace
+from core.models import Artifact, IntegrationAccount, MediaObject, Workspace
 from core.routers.workspaces import _workspace_for_member
 from core.services.auth import ApiKeyAuth
+from core.services.instagram_graph_api import list_comments
 from core.utils.schemas import ErrorResponseSchema
 
 router = Router(tags=["Workspace Artifacts"])
@@ -55,6 +56,55 @@ class ArtifactOut(Schema):
     integration_account: ArtifactIntegrationOut | None
     created: datetime
     modified: datetime
+
+
+class InstagramArtifactCommentOut(Schema):
+    id: str
+    text: str
+    username: str
+    timestamp: str | None = None
+
+
+class InstagramArtifactCommentsResponse(Schema):
+    media_id: str
+    comments: list[InstagramArtifactCommentOut]
+
+
+def _normalize_instagram_comment(row: dict) -> InstagramArtifactCommentOut | None:
+    if not isinstance(row, dict):
+        return None
+    cid = str(row.get("id") or "").strip()
+    if not cid:
+        return None
+    text = str(row.get("text") or "")
+    username = str(row.get("username") or "").strip()
+    ts = row.get("timestamp")
+    timestamp = str(ts).strip() if ts is not None and str(ts).strip() else None
+    return InstagramArtifactCommentOut(
+        id=cid,
+        text=text,
+        username=username,
+        timestamp=timestamp,
+    )
+
+
+def _instagram_post_artifact_or_error(row: Artifact) -> tuple[str, IntegrationAccount]:
+    if row.kind != Artifact.Kind.EXTERNAL_RESOURCE:
+        raise HttpError(400, "Artifact is not an external resource.")
+    meta = row.metadata or {}
+    if str(meta.get("provider") or "").strip().lower() != IntegrationAccount.Provider.INSTAGRAM:
+        raise HttpError(400, "Artifact is not linked to an Instagram post.")
+    if str(meta.get("resource_type") or "").strip() != "instagram.post":
+        raise HttpError(400, "Artifact is not an Instagram post.")
+    media_id = str(meta.get("external_resource_id") or "").strip()
+    if not media_id:
+        raise HttpError(400, "Instagram post media id is missing on this artifact.")
+    account = row.integration_account
+    if account is None:
+        raise HttpError(400, "Artifact has no integration account.")
+    if account.provider != IntegrationAccount.Provider.INSTAGRAM:
+        raise HttpError(400, "Integration account is not Instagram.")
+    return media_id, account
 
 
 def _artifact_response(row: Artifact) -> ArtifactOut:
@@ -199,6 +249,37 @@ def get_workspace_artifact(request, workspace_id: int, artifact_id: uuid.UUID):
     if row is None:
         raise HttpError(404, "Artifact not found.")
     return 200, _artifact_response(row)
+
+
+@router.get(
+    "/{workspace_id}/artifacts/{artifact_id}/instagram/comments/",
+    response={
+        200: InstagramArtifactCommentsResponse,
+        400: ErrorResponseSchema,
+        401: ErrorResponseSchema,
+        403: ErrorResponseSchema,
+        404: ErrorResponseSchema,
+    },
+    auth=[ApiKeyAuth(), django_auth],
+)
+def get_instagram_artifact_comments(request, workspace_id: int, artifact_id: uuid.UUID):
+    workspace = _workspace_for_member(request, workspace_id)
+    row = _artifact_queryset(workspace).filter(id=artifact_id).first()
+    if row is None:
+        raise HttpError(404, "Artifact not found.")
+    media_id, account = _instagram_post_artifact_or_error(row)
+    try:
+        raw = list_comments(account, media_id)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    data = raw.get("data")
+    comments: list[InstagramArtifactCommentOut] = []
+    if isinstance(data, list):
+        for item in data:
+            normalized = _normalize_instagram_comment(item)
+            if normalized is not None:
+                comments.append(normalized)
+    return 200, InstagramArtifactCommentsResponse(media_id=media_id, comments=comments)
 
 
 @router.delete(

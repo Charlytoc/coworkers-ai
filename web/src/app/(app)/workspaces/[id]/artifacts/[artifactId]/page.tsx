@@ -26,9 +26,11 @@ import {
   artifactTextBody,
   artifactTitle,
   deleteWorkspaceArtifact,
+  fetchInstagramArtifactComments,
   fetchWorkspaceArtifact,
   formatArtifactBytes,
   isHtmlTextArtifact,
+  isInstagramPostArtifact,
   type WorkspaceArtifact,
 } from "@/lib/workspace-artifacts";
 
@@ -87,6 +89,20 @@ export default function WorkspaceArtifactDetailPage() {
   const body = artifact ? artifactTextBody(artifact) : null;
   const htmlArtifact = artifact ? isHtmlTextArtifact(artifact) : false;
   const previewImageUrl = artifact ? artifactPreviewImageUrl(artifact) : null;
+  const showInstagramComments = artifact ? isInstagramPostArtifact(artifact) : false;
+
+  const {
+    data: instagramComments,
+    isPending: commentsPending,
+    error: commentsError,
+    refetch: refetchComments,
+    isFetching: commentsFetching,
+  } = useQuery({
+    queryKey: ["instagram-artifact-comments", token, orgId, workspaceId, artifactId],
+    queryFn: () => fetchInstagramArtifactComments(token!, orgId!, workspaceId, artifactId),
+    enabled: baseEnabled && showInstagramComments,
+    staleTime: 30_000,
+  });
 
   useEffect(() => {
     if (!htmlArtifact || !body) return;
@@ -356,6 +372,55 @@ export default function WorkspaceArtifactDetailPage() {
                 <Text size="sm" c="dimmed">
                   No text or image preview for this artifact.
                 </Text>
+              </Paper>
+            ) : null}
+
+            {showInstagramComments ? (
+              <Paper withBorder radius="md" p="md">
+                <Group justify="space-between" align="center" mb="sm">
+                  <Title order={5}>Comments</Title>
+                  <Button
+                    variant="light"
+                    size="xs"
+                    loading={commentsFetching}
+                    onClick={() => void refetchComments()}
+                  >
+                    Refresh comments
+                  </Button>
+                </Group>
+                {commentsPending ? (
+                  <Center py="md">
+                    <Loader size="sm" />
+                  </Center>
+                ) : commentsError ? (
+                  <Alert color="red" title="Could not load comments">
+                    {(commentsError as Error).message}
+                  </Alert>
+                ) : instagramComments && instagramComments.comments.length > 0 ? (
+                  <Stack gap="sm">
+                    {instagramComments.comments.map((comment) => (
+                      <Paper key={comment.id} withBorder radius="sm" p="sm">
+                        <Group justify="space-between" align="flex-start" gap="xs" wrap="nowrap">
+                          <Text size="sm" fw={600}>
+                            {comment.username ? `@${comment.username.replace(/^@/, "")}` : "Unknown user"}
+                          </Text>
+                          {comment.timestamp ? (
+                            <Text size="xs" c="dimmed">
+                              {new Date(comment.timestamp).toLocaleString()}
+                            </Text>
+                          ) : null}
+                        </Group>
+                        <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>
+                          {comment.text || "—"}
+                        </Text>
+                      </Paper>
+                    ))}
+                  </Stack>
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    No comments yet.
+                  </Text>
+                )}
               </Paper>
             ) : null}
 

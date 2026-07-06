@@ -152,3 +152,41 @@ export async function fetchWorkspaceArtifact(
   );
   return apiReadJson<WorkspaceArtifact>(response, "Failed to load artifact");
 }
+
+export type InstagramArtifactComment = {
+  id: string;
+  text: string;
+  username: string;
+  timestamp: string | null;
+};
+
+export type InstagramArtifactCommentsResponse = {
+  media_id: string;
+  comments: InstagramArtifactComment[];
+};
+
+export function isInstagramPostArtifact(row: WorkspaceArtifact): boolean {
+  if (row.kind !== "external_resource") return false;
+  const meta = row.metadata ?? {};
+  return (
+    String(meta.provider ?? "").toLowerCase() === "instagram" &&
+    String(meta.resource_type ?? "") === "instagram.post"
+  );
+}
+
+export async function fetchInstagramArtifactComments(
+  token: string,
+  organizationId: string,
+  workspaceId: number,
+  artifactId: string,
+): Promise<InstagramArtifactCommentsResponse> {
+  const response = await apiFetch(
+    `/workspaces/${workspaceId}/artifacts/${artifactId}/instagram/comments/`,
+    token,
+    organizationId,
+  );
+  return apiReadJson<InstagramArtifactCommentsResponse>(
+    response,
+    "Failed to load Instagram comments",
+  );
+}
