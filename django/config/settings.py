@@ -280,9 +280,6 @@ FACEBOOK_APP_ID = os.getenv("FACEBOOK_APP_ID", "")
 FACEBOOK_APP_SECRET = os.getenv("FACEBOOK_APP_SECRET", "")
 # Set this to any static string you choose, then enter it in Meta App Dashboard → Webhooks → Verify Token.
 INSTAGRAM_WEBHOOK_VERIFY_TOKEN = os.getenv("INSTAGRAM_WEBHOOK_VERIFY_TOKEN", "")
-# Comma-separated Instagram webhook fields for POST .../subscribed_apps (Instagram Login).
-# See https://developers.facebook.com/docs/instagram-platform/webhooks
-INSTAGRAM_WEBHOOK_SUBSCRIBED_FIELDS = os.getenv("INSTAGRAM_WEBHOOK_SUBSCRIBED_FIELDS", "messages")
 
 # Frontend URL used to redirect users back after the Instagram OAuth callback.
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")

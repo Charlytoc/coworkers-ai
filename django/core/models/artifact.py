@@ -57,7 +57,7 @@ class Artifact(TimeStampedModel):
     )
     integration_account = models.ForeignKey(
         IntegrationAccount,
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         related_name="artifacts",
         null=True,
         blank=True,

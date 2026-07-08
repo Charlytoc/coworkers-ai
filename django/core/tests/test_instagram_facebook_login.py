@@ -17,9 +17,17 @@ from core.services.instagram_facebook_login import (
     store_pages_pending,
 )
 from core.services.instagram_graph_api import list_media
-from core.models import IntegrationAccount, Organization, Workspace
+from core.models import Artifact, IntegrationAccount, Organization, Workspace
 from core.schemas.integration_account import IntegrationAccountOnboarding
-from core.services.instagram_service import consume_oauth_state, graph_base_for_account, store_oauth_state
+from core.services.instagram_service import (
+    _instagram_webhook_subscribed_fields_csv,
+    consume_oauth_state,
+    disconnect_instagram_account,
+    enable_integration_webhook_subscriptions,
+    graph_base_for_account,
+    INSTAGRAM_WEBHOOK_SUBSCRIBED_FIELDS,
+    store_oauth_state,
+)
 
 
 @override_settings(
@@ -42,6 +50,13 @@ class InstagramOauthStateAuthMethodTests(TestCase):
         self.assertEqual(payload["auth_method"], "facebook_login")
 
 
+class InstagramWebhookSubscribedFieldsTests(TestCase):
+    def test_includes_messages_and_comments(self) -> None:
+        self.assertIn("messages", INSTAGRAM_WEBHOOK_SUBSCRIBED_FIELDS)
+        self.assertIn("comments", INSTAGRAM_WEBHOOK_SUBSCRIBED_FIELDS)
+        self.assertEqual(_instagram_webhook_subscribed_fields_csv(), "messages,comments")
+
+
 class InstagramCapabilitiesTests(TestCase):
     def test_instagram_login_defaults(self) -> None:
         caps = capabilities_from_scopes(
@@ -54,6 +69,7 @@ class InstagramCapabilitiesTests(TestCase):
 
     def test_facebook_login_full_scopes(self) -> None:
         scopes = default_scopes_for_auth_method(InstagramAuthMethod.FACEBOOK_LOGIN)
+        self.assertIn("pages_manage_metadata", scopes)
         caps = capabilities_from_scopes(
             auth_method=InstagramAuthMethod.FACEBOOK_LOGIN,
             granted_scopes=scopes,
@@ -177,3 +193,81 @@ class InstagramGraphApiCapabilityTests(TestCase):
         data = list_media(account)
         self.assertEqual(data["data"], [])
         self.assertTrue(mock_get.called)
+
+
+class InstagramDisconnectTests(TestCase):
+    def setUp(self) -> None:
+        org = Organization.objects.create(name="disc", domain="disc.example.test", status="active")
+        self.workspace = Workspace.objects.create(organization=org, name="disc-ws")
+        self.account = IntegrationAccount.objects.create(
+            workspace=self.workspace,
+            provider=IntegrationAccount.Provider.INSTAGRAM,
+            external_account_id="ig_disc",
+            status=IntegrationAccount.Status.ACTIVE,
+            config={"ig_user_id": "ig_disc"},
+        )
+        self.account.auth = {"access_token": "tok"}
+        self.account.save()
+        Artifact.objects.create(
+            workspace=self.workspace,
+            kind=Artifact.Kind.EXTERNAL_RESOURCE,
+            integration_account=self.account,
+            label="Published post",
+            metadata={
+                "provider": "instagram",
+                "resource_type": "instagram.post",
+                "external_resource_id": "17996105003792009",
+            },
+        )
+
+    @patch("core.services.instagram_service.disable_integration_webhook_subscriptions")
+    def test_disconnect_deletes_account_and_linked_artifacts(self, mock_unsub: MagicMock) -> None:
+        mock_unsub.return_value = {"success": False}
+        account_id = self.account.id
+        disconnect_instagram_account(self.account)
+        self.assertFalse(IntegrationAccount.objects.filter(id=account_id).exists())
+        self.assertEqual(Artifact.objects.filter(workspace=self.workspace).count(), 0)
+
+
+class IntegrationWebhookSubscriptionRoutingTests(TestCase):
+    def setUp(self) -> None:
+        org = Organization.objects.create(name="sub", domain="sub.example.test", status="active")
+        self.workspace = Workspace.objects.create(organization=org, name="sub-ws")
+
+    @patch("core.services.instagram_service.facebook_enable_page_webhook_subscriptions")
+    def test_facebook_login_uses_page_subscribed_apps(self, mock_page_sub: MagicMock) -> None:
+        mock_page_sub.return_value = {"success": True}
+        account = IntegrationAccount.objects.create(
+            workspace=self.workspace,
+            provider=IntegrationAccount.Provider.INSTAGRAM,
+            external_account_id="ig_page",
+            config={
+                "auth_method": "facebook_login",
+                "facebook_page_id": "page_99",
+                "ig_user_id": "ig_page",
+            },
+        )
+        account.auth = {"access_token": "page_tok"}
+        account.save()
+        result = enable_integration_webhook_subscriptions(account)
+        self.assertTrue(result["success"])
+        mock_page_sub.assert_called_once_with(page_id="page_99", page_access_token="page_tok")
+
+    @patch("core.services.instagram_service.instagram_enable_webhook_subscriptions")
+    def test_instagram_login_uses_ig_user_subscribed_apps(self, mock_ig_sub: MagicMock) -> None:
+        mock_ig_sub.return_value = {"success": True}
+        account = IntegrationAccount.objects.create(
+            workspace=self.workspace,
+            provider=IntegrationAccount.Provider.INSTAGRAM,
+            external_account_id="ig_lite",
+            config={"auth_method": "instagram_login", "ig_user_id": "ig_lite"},
+        )
+        account.auth = {"access_token": "ig_tok"}
+        account.save()
+        result = enable_integration_webhook_subscriptions(account)
+        self.assertTrue(result["success"])
+        mock_ig_sub.assert_called_once_with(
+            access_token="ig_tok",
+            ig_user_id="ig_lite",
+            graph_base="https://graph.instagram.com",
+        )

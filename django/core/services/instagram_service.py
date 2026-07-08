@@ -531,41 +531,50 @@ def instagram_publish_image_post(
 # Graph API: Webhook field subscriptions (subscribed_apps)
 # ---------------------------------------------------------------------------
 # https://developers.facebook.com/docs/instagram-platform/webhooks
+#
+# Per-account fields sent to POST /{ig-user-id}/subscribed_apps on connect.
+# Must stay in sync with fields subscribed in the Meta App Dashboard (Instagram object).
+INSTAGRAM_WEBHOOK_SUBSCRIBED_FIELDS = (
+    "messages",
+    "comments",
+)
+
+# Facebook Login: Page-level field that enables Instagram dashboard webhooks to deliver.
+# https://developers.facebook.com/docs/graph-api/webhooks/getting-started/webhooks-for-instagram/
+FACEBOOK_PAGE_WEBHOOK_SUBSCRIBED_FIELDS = ("feed",)
 
 
 def _instagram_webhook_subscribed_fields_csv() -> str:
-    raw = getattr(settings, "INSTAGRAM_WEBHOOK_SUBSCRIBED_FIELDS", "messages")
-    if isinstance(raw, (list, tuple)):
-        parts = [str(x).strip() for x in raw if str(x).strip()]
-        return ",".join(parts) if parts else "messages"
-    s = str(raw).strip()
-    return s if s else "messages"
+    return ",".join(INSTAGRAM_WEBHOOK_SUBSCRIBED_FIELDS)
 
 
-def instagram_enable_webhook_subscriptions(
-    *, access_token: str, ig_user_id: str, graph_base: str = INSTAGRAM_GRAPH_BASE
+def _facebook_page_webhook_subscribed_fields_csv() -> str:
+    return ",".join(FACEBOOK_PAGE_WEBHOOK_SUBSCRIBED_FIELDS)
+
+
+def _subscribed_apps_post(
+    *,
+    object_id: str,
+    access_token: str,
+    subscribed_fields: str,
+    graph_base: str,
+    log_label: str,
 ) -> dict[str, Any]:
-    """Enable Meta→app webhook delivery for this Instagram professional account.
-
-    Per Meta: ``POST https://graph.instagram.com/{{version}}/{{instagram-account-id}}/subscribed_apps``
-    with ``subscribed_fields`` and the Instagram User access token.
-    """
-    uid = str(ig_user_id or "").strip()
-    if not access_token or not uid:
-        return {"success": False, "error": "missing_token_or_ig_user_id"}
-    fields = _instagram_webhook_subscribed_fields_csv()
-    url = f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{uid}/subscribed_apps"
+    oid = str(object_id or "").strip()
+    if not access_token or not oid:
+        return {"success": False, "error": "missing_token_or_object_id"}
+    url = f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{oid}/subscribed_apps"
     resp = requests.post(
         url,
-        params={"subscribed_fields": fields, "access_token": access_token},
+        params={"subscribed_fields": subscribed_fields, "access_token": access_token},
         timeout=30,
     )
-    raw_text = resp.text or ""
     try:
         data = resp.json()
     except ValueError:
         logger.warning(
-            "instagram subscribed_apps POST invalid_json http_status=%s",
+            "%s subscribed_apps POST invalid_json http_status=%s",
+            log_label,
             resp.status_code,
         )
         return {
@@ -581,7 +590,8 @@ def instagram_enable_webhook_subscriptions(
         }
     if "error" in data:
         logger.warning(
-            "instagram subscribed_apps POST graph_error http_status=%s err=%s",
+            "%s subscribed_apps POST graph_error http_status=%s err=%s",
+            log_label,
             resp.status_code,
             json.dumps(data.get("error"), default=str)[:2000],
         )
@@ -595,26 +605,31 @@ def instagram_enable_webhook_subscriptions(
     ok = 200 <= resp.status_code < 300
     if not ok:
         logger.warning(
-            "instagram subscribed_apps POST unexpected http_status=%s",
+            "%s subscribed_apps POST unexpected http_status=%s",
+            log_label,
             resp.status_code,
         )
     return {"success": ok, "http_status": resp.status_code, "data": data}
 
 
-def instagram_disable_webhook_subscriptions(
-    *, access_token: str, ig_user_id: str, graph_base: str = INSTAGRAM_GRAPH_BASE
+def _subscribed_apps_delete(
+    *,
+    object_id: str,
+    access_token: str,
+    graph_base: str,
+    log_label: str,
 ) -> dict[str, Any]:
-    """Remove this app's webhook subscription for the IG account (best-effort; same path as POST)."""
-    uid = str(ig_user_id or "").strip()
-    if not access_token or not uid:
-        return {"success": False, "error": "missing_token_or_ig_user_id"}
-    url = f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{uid}/subscribed_apps"
+    oid = str(object_id or "").strip()
+    if not access_token or not oid:
+        return {"success": False, "error": "missing_token_or_object_id"}
+    url = f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{oid}/subscribed_apps"
     resp = requests.delete(url, params={"access_token": access_token}, timeout=30)
     try:
         data = resp.json()
     except ValueError:
         logger.warning(
-            "instagram subscribed_apps DELETE invalid_json http_status=%s",
+            "%s subscribed_apps DELETE invalid_json http_status=%s",
+            log_label,
             resp.status_code,
         )
         return {
@@ -624,7 +639,8 @@ def instagram_disable_webhook_subscriptions(
         }
     if isinstance(data, dict) and "error" in data:
         logger.warning(
-            "instagram subscribed_apps DELETE graph_error http_status=%s err=%s",
+            "%s subscribed_apps DELETE graph_error http_status=%s err=%s",
+            log_label,
             resp.status_code,
             json.dumps(data.get("error"), default=str)[:2000],
         )
@@ -641,6 +657,55 @@ def instagram_disable_webhook_subscriptions(
         "http_status": resp.status_code,
         "data": data if isinstance(data, dict) else {},
     }
+
+
+def instagram_enable_webhook_subscriptions(
+    *, access_token: str, ig_user_id: str, graph_base: str = INSTAGRAM_GRAPH_BASE
+) -> dict[str, Any]:
+    """Enable Meta→app webhook delivery for an Instagram Login professional account."""
+    return _subscribed_apps_post(
+        object_id=ig_user_id,
+        access_token=access_token,
+        subscribed_fields=_instagram_webhook_subscribed_fields_csv(),
+        graph_base=graph_base,
+        log_label="instagram",
+    )
+
+
+def facebook_enable_page_webhook_subscriptions(
+    *, page_id: str, page_access_token: str
+) -> dict[str, Any]:
+    """Enable Page subscriptions required for Instagram webhooks with Facebook Login."""
+    return _subscribed_apps_post(
+        object_id=page_id,
+        access_token=page_access_token,
+        subscribed_fields=_facebook_page_webhook_subscribed_fields_csv(),
+        graph_base=FACEBOOK_GRAPH_BASE,
+        log_label="facebook_page",
+    )
+
+
+def instagram_disable_webhook_subscriptions(
+    *, access_token: str, ig_user_id: str, graph_base: str = INSTAGRAM_GRAPH_BASE
+) -> dict[str, Any]:
+    """Remove this app's webhook subscription for the IG account (best-effort)."""
+    return _subscribed_apps_delete(
+        object_id=ig_user_id,
+        access_token=access_token,
+        graph_base=graph_base,
+        log_label="instagram",
+    )
+
+
+def facebook_disable_page_webhook_subscriptions(
+    *, page_id: str, page_access_token: str
+) -> dict[str, Any]:
+    return _subscribed_apps_delete(
+        object_id=page_id,
+        access_token=page_access_token,
+        graph_base=FACEBOOK_GRAPH_BASE,
+        log_label="facebook_page",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -768,6 +833,49 @@ def get_ig_user_id(account: IntegrationAccount) -> str:
     ).strip()
 
 
+def enable_integration_webhook_subscriptions(account: IntegrationAccount) -> dict[str, Any]:
+    """Subscribe the connected account so Meta delivers configured Instagram webhooks."""
+    token = get_access_token(account)
+    cfg = account.config or {}
+    if resolve_auth_method(cfg.get(CONFIG_AUTH_METHOD)) == InstagramAuthMethod.FACEBOOK_LOGIN:
+        page_id = str(cfg.get(CONFIG_FACEBOOK_PAGE_ID) or "").strip()
+        if not token or not page_id:
+            return {"success": False, "error": "missing_page_or_token"}
+        return facebook_enable_page_webhook_subscriptions(
+            page_id=page_id,
+            page_access_token=token,
+        )
+    ig_uid = get_ig_user_id(account)
+    if not token or not ig_uid:
+        return {"success": False, "error": "missing_token_or_ig_user_id"}
+    return instagram_enable_webhook_subscriptions(
+        access_token=token,
+        ig_user_id=ig_uid,
+        graph_base=INSTAGRAM_GRAPH_BASE,
+    )
+
+
+def disable_integration_webhook_subscriptions(account: IntegrationAccount) -> dict[str, Any]:
+    token = get_access_token(account)
+    cfg = account.config or {}
+    if resolve_auth_method(cfg.get(CONFIG_AUTH_METHOD)) == InstagramAuthMethod.FACEBOOK_LOGIN:
+        page_id = str(cfg.get(CONFIG_FACEBOOK_PAGE_ID) or "").strip()
+        if not token or not page_id:
+            return {"success": False, "error": "missing_page_or_token"}
+        return facebook_disable_page_webhook_subscriptions(
+            page_id=page_id,
+            page_access_token=token,
+        )
+    ig_uid = get_ig_user_id(account)
+    if not token or not ig_uid:
+        return {"success": False, "error": "missing_token_or_ig_user_id"}
+    return instagram_disable_webhook_subscriptions(
+        access_token=token,
+        ig_user_id=ig_uid,
+        graph_base=graph_base_for_account(account),
+    )
+
+
 def _find_account_by_ig_user_id(ig_user_id: str) -> IntegrationAccount | None:
     """Match webhook ``entry.id`` (professional id) to a connected account.
 
@@ -811,12 +919,15 @@ def connect_instagram_account(
     scopes = granted_scopes if granted_scopes is not None else default_scopes_for_auth_method(auth_method)
     caps = capabilities_from_scopes(auth_method=auth_method, granted_scopes=scopes)
     logger.info(
-        "instagram connect workspace_id=%s user_id=%s ig_user_id=%s ig_username=%s auth_method=%s",
+        "instagram connect start workspace_id=%s user_id=%s auth_method=%s "
+        "requested_scopes=%s ig_user_id=%s ig_username=%s facebook_page_id=%s",
         workspace.id,
         uid,
+        auth_method.value,
+        scopes,
         ig_user_id,
         ig_username or "",
-        auth_method.value,
+        facebook_page_id or "",
     )
     display_name = f"@{ig_username}" if ig_username else ig_user_id
 
@@ -837,8 +948,6 @@ def connect_instagram_account(
         if onboarding is not None:
             cfg[INTEGRATION_ONBOARDING_CONFIG_KEY] = onboarding.model_dump(mode="json")
         return cfg
-
-    graph_base = FACEBOOK_GRAPH_BASE if auth_method == InstagramAuthMethod.FACEBOOK_LOGIN else INSTAGRAM_GRAPH_BASE
 
     with transaction.atomic():
         account, _created = IntegrationAccount.objects.get_or_create(
@@ -889,24 +998,34 @@ def connect_instagram_account(
         provision_integration_default_job.delay(str(account.id))
 
     logger.info(
-        "instagram connect done account_id=%s workspace_id=%s created=%s external_account_id=%s",
+        "instagram connect done account_id=%s workspace_id=%s created=%s external_account_id=%s "
+        "auth_method=%s ig_username=%s granted_scopes=%s capabilities=%s facebook_page_id=%s",
         account.id,
         workspace.id,
         _created,
         account.external_account_id,
+        auth_method.value,
+        ig_username or "",
+        scopes,
+        caps,
+        facebook_page_id or "",
     )
 
-    sub = instagram_enable_webhook_subscriptions(
-        access_token=access_token, ig_user_id=ig_user_id, graph_base=graph_base
-    )
+    sub = enable_integration_webhook_subscriptions(account)
     if not sub.get("success"):
         logger.warning(
-            "instagram subscribed_apps_failed account_id=%s detail=%s",
+            "instagram subscribed_apps_failed account_id=%s auth_method=%s detail=%s",
             account.id,
+            auth_method.value,
             json.dumps(sub, default=str)[:2000],
         )
     else:
-        logger.info("instagram subscribed_apps_ok account_id=%s", account.id)
+        logger.info(
+            "instagram subscribed_apps_ok account_id=%s auth_method=%s http_status=%s",
+            account.id,
+            auth_method.value,
+            sub.get("http_status"),
+        )
 
     return account
 
@@ -915,11 +1034,8 @@ def disconnect_instagram_account(account: IntegrationAccount) -> None:
     if account.provider != IntegrationAccount.Provider.INSTAGRAM:
         raise ValueError("not an Instagram integration")
     token = get_access_token(account)
-    ig_uid = str(account.external_account_id or "").strip() or get_ig_user_id(account)
-    if token and ig_uid:
-        unsub = instagram_disable_webhook_subscriptions(
-            access_token=token, ig_user_id=ig_uid, graph_base=graph_base_for_account(account)
-        )
+    if token:
+        unsub = disable_integration_webhook_subscriptions(account)
         if not unsub.get("success"):
             logger.warning(
                 "instagram subscribed_apps DELETE failed account_id=%s detail=%s",
@@ -928,7 +1044,7 @@ def disconnect_instagram_account(account: IntegrationAccount) -> None:
             )
         else:
             logger.info(
-                "Isntagram account unsubscribed successfully account_id=%s", account.id
+                "instagram account unsubscribed successfully account_id=%s", account.id
             )
     account.delete()
 
