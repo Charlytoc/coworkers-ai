@@ -17,13 +17,16 @@ import {
   Paper,
   PasswordInput,
   ScrollArea,
+  SimpleGrid,
   Stack,
   Text,
   Textarea,
   TextInput,
   Title,
+  UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure, useLocalStorage } from "@mantine/hooks";
+import { IconUser } from "@tabler/icons-react";
 import { io, Socket } from "socket.io-client";
 import { API_BASE_URL } from "@/lib/api-base";
 import type { components } from "@/lib/api/schema";
@@ -157,6 +160,62 @@ type ChatEntry = {
   createdAt: string;
   attachments: ChatAttachment[];
 };
+
+type ChatEligibleJob = JobAssignment & { workspace_name: string };
+
+function CoworkerCard({
+  roleName,
+  description,
+  workspaceName,
+  onClick,
+}: {
+  roleName: string;
+  description: string;
+  workspaceName: string;
+  onClick: () => void;
+}) {
+  const blurb =
+    description.trim() ||
+    `Configured job in ${workspaceName}. Chat uses its instructions, tools, and persona.`;
+
+  return (
+    <UnstyledButton
+      onClick={onClick}
+      style={{
+        display: "block",
+        width: "100%",
+        padding: "var(--mantine-spacing-md)",
+        borderRadius: "var(--mantine-radius-md)",
+        border: "1px solid var(--mantine-color-dark-5)",
+        background: "var(--mantine-color-dark-6)",
+        transition: "border-color 120ms ease, background 120ms ease",
+      }}
+      styles={{
+        root: {
+          "&:hover": {
+            borderColor: "var(--mantine-color-wine-6)",
+            background: "var(--mantine-color-dark-5)",
+          },
+        },
+      }}
+    >
+      <Stack gap={8}>
+        <Box c="wine">
+          <IconUser size={22} stroke={1.5} />
+        </Box>
+        <Text fw={600} size="sm" lineClamp={2}>
+          {roleName}
+        </Text>
+        <Text size="xs" c="dimmed" lh={1.4} lineClamp={3}>
+          {blurb}
+        </Text>
+        <Badge variant="outline" size="xs" w="fit-content">
+          {workspaceName}
+        </Badge>
+      </Stack>
+    </UnstyledButton>
+  );
+}
 
 function ChatMessageTimestamp({ createdAt }: { createdAt: string }) {
   const d = new Date(createdAt);
@@ -434,9 +493,7 @@ export default function ChatPage() {
     staleTime: 30_000,
   });
 
-  const { data: chatEligibleJobs, isPending: jobsPickerPending } = useQuery<
-    (JobAssignment & { workspace_name: string })[]
-  >({
+  const { data: chatEligibleJobs, isPending: jobsPickerPending } = useQuery<ChatEligibleJob[]>({
     queryKey: [
       "chat-eligible-jobs",
       token,
@@ -687,14 +744,13 @@ export default function ChatPage() {
     const rows = chatEligibleJobs ?? [];
     return (
       <Center style={{ flex: 1 }} p="xl">
-        <Paper withBorder radius="md" p="xl" maw={560} w="100%">
-          <Stack gap="md">
+        <Paper withBorder radius="md" p="xl" maw={720} w="100%">
+          <Stack gap="lg">
             <div>
-              <Title order={3}>Pick a job assignment</Title>
+              <Title order={3}>Pick a Coworker</Title>
               <Text c="dimmed" size="sm" mt={4}>
-                Web chat runs as a specific workspace job (instructions, tools, and persona). Choose
-                an enabled job that has at least one cyber identity, or create jobs from the job
-                assignments page.
+                Web chat runs as a specific coworker (instructions, tools, and persona). Choose an
+                enabled one with a cyber identity, or create coworkers from the job assignments page.
               </Text>
             </div>
 
@@ -704,27 +760,25 @@ export default function ChatPage() {
               </Center>
             ) : rows.length === 0 ? (
               <Text c="dimmed" size="sm">
-                No eligible jobs found. Create a job assignment with a cyber identity and ensure it is
-                enabled.
+                No coworkers available yet. Create a job assignment with a cyber identity and ensure
+                it is enabled.
               </Text>
             ) : (
-              <Stack gap="xs">
+              <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm">
                 {rows.map((row) => (
-                  <Button
+                  <CoworkerCard
                     key={row.id}
-                    variant="light"
-                    justify="space-between"
-                    rightSection={<Badge variant="outline">{row.workspace_name}</Badge>}
+                    roleName={row.role_name}
+                    description={row.description}
+                    workspaceName={row.workspace_name}
                     onClick={() =>
-                      router.push(`/chat?job=${encodeURIComponent(row.id)}&workspace=${row.workspace_id}`)
+                      router.push(
+                        `/chat?job=${encodeURIComponent(row.id)}&workspace=${row.workspace_id}`,
+                      )
                     }
-                  >
-                    <Text size="sm" lineClamp={2} ta="left">
-                      {row.role_name}
-                    </Text>
-                  </Button>
+                  />
                 ))}
-              </Stack>
+              </SimpleGrid>
             )}
 
             <Button component={Link} href={jobsHref} variant="default">

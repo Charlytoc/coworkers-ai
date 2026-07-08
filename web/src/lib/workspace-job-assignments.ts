@@ -13,6 +13,12 @@ export type ActionableCatalogRow = {
     display_name: string;
     status: string;
   } | null;
+  /** Capability the target account must hold (e.g. Instagram "comments"); null when ungated. */
+  required_capability?: string | null;
+  /** False when the bound account lacks ``required_capability`` — the action can't be selected. */
+  available?: boolean;
+  /** Human explanation shown when ``available`` is false. */
+  unavailable_reason?: string | null;
 };
 
 export type JobAssignmentConfigAccount = {
@@ -257,10 +263,14 @@ export function integrationActionOptionsForAccount(
 ) {
   return actionables
     .filter((a) => a.integration_account_id === integrationAccountId)
-    .map((a) => ({
-      value: actionKey(a),
-      label: a.name,
-    }));
+    .map((a) => {
+      const unavailable = a.available === false;
+      return {
+        value: actionKey(a),
+        label: unavailable ? `${a.name} — needs Facebook Login` : a.name,
+        disabled: unavailable,
+      };
+    });
 }
 
 /** Remove one integration’s actions and prune inbound slugs if no send actions remain for that provider. */

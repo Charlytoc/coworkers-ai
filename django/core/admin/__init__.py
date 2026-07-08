@@ -8,7 +8,6 @@ from core.admin.cyber_identity import CyberIdentityAdmin
 from core.admin.message import MessageAdmin
 from core.admin.identity_asset import IdentityAssetAdmin
 from core.admin.integration_account import IntegrationAccountAdmin
-from core.admin.integration_bridge import IntegrationBridgeAdmin
 from core.admin.integration_event import IntegrationEventAdmin
 from core.admin.job_assignment import JobAssignmentAdmin
 from core.admin.media_object import MediaObjectAdmin
@@ -28,7 +27,6 @@ from core.models import (
     CyberIdentity,
     IdentityAsset,
     IntegrationAccount,
-    IntegrationBridge,
     IntegrationEvent,
     JobAssignment,
     MediaObject,
@@ -54,7 +52,6 @@ admin.site.register(CyberIdentity, CyberIdentityAdmin)
 admin.site.register(Memory, MemoryAdmin)
 admin.site.register(IdentityAsset, IdentityAssetAdmin)
 admin.site.register(IntegrationAccount, IntegrationAccountAdmin)
-admin.site.register(IntegrationBridge, IntegrationBridgeAdmin)
 admin.site.register(IntegrationEvent, IntegrationEventAdmin)
 admin.site.register(JobAssignment, JobAssignmentAdmin)
 admin.site.register(TaskExecution, TaskExecutionAdmin)

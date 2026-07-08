@@ -188,10 +188,13 @@ export function IntegrationActionsTriggersEditor({
       ? [...PROVIDER_INBOUND_EVENTS[provider]]
       : [];
 
-  const actionOptionsForDraft = useMemo(
-    () => integrationActionOptionsForAccount(actionables, draft.accountId),
-    [actionables, draft.accountId],
-  );
+  const actionOptionsForDraft = useMemo(() => {
+    const selected = new Set(draft.actionKeysForAccount);
+    // Keep already-selected actions removable even if the account later lost the capability.
+    return integrationActionOptionsForAccount(actionables, draft.accountId).map((o) =>
+      selected.has(o.value) ? { ...o, disabled: false } : o,
+    );
+  }, [actionables, draft.accountId, draft.actionKeysForAccount]);
 
   const attachSelectData = useMemo(
     () =>
@@ -417,7 +420,8 @@ export function IntegrationActionsTriggersEditor({
             <>
               <Text size="sm" c="dimmed">
                 Pick what this job may do on this account (e.g. send a DM). More capabilities appear here as
-                the catalog grows.
+                the catalog grows. Greyed-out actions need a capability this account was not granted —
+                reconnect it with Facebook Login to enable them.
               </Text>
               <MultiSelect
                 label="Actions on this account"

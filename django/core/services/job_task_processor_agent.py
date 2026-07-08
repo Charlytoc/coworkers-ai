@@ -9,6 +9,8 @@ from core.agent.tools.call_artifact_creator import make_call_artifact_creator_to
 from core.agent.tools.create_image_artifact import make_create_image_artifact_tool
 from core.agent.tools.create_recurring_job import make_create_recurring_job_tool
 from core.agent.tools.create_text_artifact import make_create_text_artifact_tool
+from core.agent.tools.instagram_comments import make_instagram_comments_tool
+from core.agent.tools.instagram_insights import make_instagram_insights_tool
 from core.agent.tools.publish_external_resource import make_publish_external_resource_tool
 from core.agent.tools.schedule_one_off_task import make_schedule_one_off_task_tool
 from core.agent.tools.send_message import make_send_direct_message_tool, make_send_message_tool
@@ -16,6 +18,8 @@ from core.integrations.actionables import (
     ARTIFACTS_CALL_CREATOR,
     ARTIFACTS_CREATE_IMAGE,
     ARTIFACTS_CREATE_TEXT,
+    INSTAGRAM_MANAGE_COMMENTS,
+    INSTAGRAM_MEDIA_INSIGHTS,
     INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE,
     TASKS_CREATE_RECURRING_JOB,
     TASKS_SCHEDULE_ONE_OFF,
@@ -118,6 +122,18 @@ class JobTaskProcessorAgent:
                 )
             )
 
+        comment_actions = [
+            act for act in actions if act.actionable_slug == INSTAGRAM_MANAGE_COMMENTS.slug
+        ]
+        if comment_actions:
+            _add(make_instagram_comments_tool(workspace=job.workspace, actions=comment_actions))
+
+        insight_actions = [
+            act for act in actions if act.actionable_slug == INSTAGRAM_MEDIA_INSIGHTS.slug
+        ]
+        if insight_actions:
+            _add(make_instagram_insights_tool(workspace=job.workspace, actions=insight_actions))
+
         for act in actions:
             slug = act.actionable_slug
             if slug == TASKS_SCHEDULE_ONE_OFF.slug:
@@ -148,6 +164,16 @@ class JobTaskProcessorAgent:
                 "the child task to create the required assets and call `publish_external_resource` with "
                 "`resource_type: \"instagram.post\"`. After the child finishes, you will run again to "
                 "notify the user."
+            )
+        if INSTAGRAM_MANAGE_COMMENTS.slug in action_slugs:
+            lines.append(
+                "- You can read and moderate Instagram comments with `instagram_comments` "
+                "(list comments on a post, reply to a post or a specific comment, delete a comment)."
+            )
+        if INSTAGRAM_MEDIA_INSIGHTS.slug in action_slugs:
+            lines.append(
+                "- You can read Instagram content and analytics with `instagram_insights` "
+                "(list recent media, read per-post reach/likes/comments/saves/shares)."
             )
         if not lines:
             return None

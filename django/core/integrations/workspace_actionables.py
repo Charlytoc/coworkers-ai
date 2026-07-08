@@ -29,6 +29,7 @@ from core.schemas.job_assignment import (
     JobAssignmentConfigAccount,
     JobAssignmentEventTrigger,
 )
+from core.services.instagram_capabilities import account_has_capability
 
 
 EXCLUSIVE_INBOUND_EVENTS = exclusive_inbound_event_slugs()
@@ -110,7 +111,12 @@ def list_actionable_catalog_for_workspace(workspace: Workspace) -> list[dict[str
         rows = WORKSPACE_CATALOG_ACTIONABLES.get(acc.provider)
         if not rows:
             continue
+        caps = (acc.config or {}).get("capabilities")
+        caps = caps if isinstance(caps, list) else None
         for a in rows:
+            available = a.required_capability is None or account_has_capability(
+                caps, a.required_capability
+            )
             out.append(
                 {
                     "slug": a.slug,
@@ -119,6 +125,16 @@ def list_actionable_catalog_for_workspace(workspace: Workspace) -> list[dict[str
                     "provider": a.provider,
                     "integration_account_id": str(acc.id),
                     "integration": _account_row(acc),
+                    "required_capability": a.required_capability,
+                    "available": available,
+                    "unavailable_reason": (
+                        None
+                        if available
+                        else (
+                            f"This account is missing the '{a.required_capability}' capability. "
+                            "Reconnect it with Facebook Login to grant the needed scope."
+                        )
+                    ),
                 }
             )
     for a in (
@@ -135,6 +151,9 @@ def list_actionable_catalog_for_workspace(workspace: Workspace) -> list[dict[str
                 "provider": a.provider,
                 "integration_account_id": None,
                 "integration": None,
+                "required_capability": a.required_capability,
+                "available": True,
+                "unavailable_reason": None,
             }
         )
     return out
@@ -197,6 +216,18 @@ def validate_job_assignment_config(
                 400,
                 f"Action {act.actionable_slug!r} requires a {expected.label} integration account.",
             )
+        if catalog.required_capability is not None:
+            caps = (acc.config or {}).get("capabilities")
+            if not account_has_capability(
+                caps if isinstance(caps, list) else None, catalog.required_capability
+            ):
+                raise HttpError(
+                    400,
+                    f"Action {act.actionable_slug!r} requires the "
+                    f"{catalog.required_capability!r} capability on account "
+                    f"{acc.display_name or acc.external_account_id!r}, which it does not have. "
+                    "Reconnect the account with Facebook Login to grant the needed scope.",
+                )
         if acc.id not in seen_accounts:
             config.accounts.append(JobAssignmentConfigAccount(id=acc.id, provider=acc.provider))
             seen_accounts.add(acc.id)

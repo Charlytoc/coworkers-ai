@@ -7,6 +7,8 @@ import logging
 from django.db import transaction
 
 from core.integrations.actionables import (
+    INSTAGRAM_MANAGE_COMMENTS,
+    INSTAGRAM_MEDIA_INSIGHTS,
     INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE,
     INSTAGRAM_REPLY_DM,
     TASKS_CREATE_RECURRING_JOB,
@@ -15,6 +17,7 @@ from core.integrations.actionables import (
 )
 from core.integrations.event_types import INSTAGRAM_DM_MESSAGE, TELEGRAM_PRIVATE_MESSAGE
 from core.models import CyberIdentity, IntegrationAccount, JobAssignment
+from core.services.instagram_capabilities import account_has_capability
 from core.schemas.job_assignment import (
     JobAssignmentAction,
     JobAssignmentConfig,
@@ -138,6 +141,49 @@ def build_telegram_default_job_config(
 def build_instagram_default_job_config(
     *, account: IntegrationAccount, identity: CyberIdentity
 ) -> JobAssignmentConfig:
+    caps = (account.config or {}).get("capabilities")
+    caps = caps if isinstance(caps, list) else None
+
+    actions = [
+        JobAssignmentAction(
+            actionable_slug=INSTAGRAM_REPLY_DM.slug,
+            integration_account_id=account.id,
+        ),
+        JobAssignmentAction(
+            actionable_slug=INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE.slug,
+            integration_account_id=account.id,
+        ),
+    ]
+    # Include comment/insight tools only when the connection actually granted those scopes
+    # (Facebook Login). Instagram-Login accounts won't have them, so we omit rather than wire
+    # actions that would fail at runtime.
+    if account_has_capability(caps, INSTAGRAM_MANAGE_COMMENTS.required_capability):
+        actions.append(
+            JobAssignmentAction(
+                actionable_slug=INSTAGRAM_MANAGE_COMMENTS.slug,
+                integration_account_id=account.id,
+            )
+        )
+    if account_has_capability(caps, INSTAGRAM_MEDIA_INSIGHTS.required_capability):
+        actions.append(
+            JobAssignmentAction(
+                actionable_slug=INSTAGRAM_MEDIA_INSIGHTS.slug,
+                integration_account_id=account.id,
+            )
+        )
+    actions.extend(
+        [
+            JobAssignmentAction(
+                actionable_slug=TASKS_SCHEDULE_ONE_OFF.slug,
+                integration_account_id=None,
+            ),
+            JobAssignmentAction(
+                actionable_slug=TASKS_CREATE_RECURRING_JOB.slug,
+                integration_account_id=None,
+            ),
+        ]
+    )
+
     return JobAssignmentConfig(
         accounts=[
             JobAssignmentConfigAccount(id=account.id, provider=account.provider),
@@ -149,24 +195,7 @@ def build_instagram_default_job_config(
                 filter={},
             ),
         ],
-        actions=[
-            JobAssignmentAction(
-                actionable_slug=INSTAGRAM_REPLY_DM.slug,
-                integration_account_id=account.id,
-            ),
-            JobAssignmentAction(
-                actionable_slug=INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE.slug,
-                integration_account_id=account.id,
-            ),
-            JobAssignmentAction(
-                actionable_slug=TASKS_SCHEDULE_ONE_OFF.slug,
-                integration_account_id=None,
-            ),
-            JobAssignmentAction(
-                actionable_slug=TASKS_CREATE_RECURRING_JOB.slug,
-                integration_account_id=None,
-            ),
-        ],
+        actions=actions,
     )
 
 

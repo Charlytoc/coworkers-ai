@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from core.schemas.integration_account import InstagramCapability
+
 
 @dataclass(frozen=True)
 class Actionable:
@@ -16,6 +18,11 @@ class Actionable:
     provider: str
     name: str
     description: str
+    required_capability: str | None = None
+    """For provider actionables gated by a granted scope (e.g. an Instagram
+    :class:`~core.schemas.integration_account.InstagramCapability`), the capability the target
+    integration account must hold. Enforced at job-config validation time so the capability layer
+    is the single source of truth for what a job may be wired to do."""
 
 
 TELEGRAM_REPLY_DM = Actionable(
@@ -36,6 +43,7 @@ INSTAGRAM_REPLY_DM = Actionable(
         "Send a text reply in the active Instagram DM thread for this run "
         "(same thread as the inbound message or the conversation bound to this task)."
     ),
+    required_capability=InstagramCapability.DM.value,
 )
 
 TELEGRAM_SEND_DIRECT_DM = Actionable(
@@ -57,6 +65,7 @@ INSTAGRAM_SEND_DIRECT_DM = Actionable(
         "Send an Instagram DM to one of the conversation thread ids listed on this action's "
         "`direct_dm_recipients`. Instagram messaging windows and approval rules still apply."
     ),
+    required_capability=InstagramCapability.DM.value,
 )
 
 INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE = Actionable(
@@ -64,6 +73,29 @@ INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE = Actionable(
     provider="instagram",
     name="Publish Instagram post",
     description="Publish a generated artifact as an Instagram feed post and save the provider resource as an artifact.",
+    required_capability=InstagramCapability.PUBLISH.value,
+)
+
+INSTAGRAM_MANAGE_COMMENTS = Actionable(
+    slug="instagram.manage_comments",
+    provider="instagram",
+    name="Manage Instagram comments",
+    description=(
+        "Read comments on the account's media and reply to or delete them "
+        "(list comments on a post, reply to a post or a specific comment, delete a comment)."
+    ),
+    required_capability=InstagramCapability.COMMENTS.value,
+)
+
+INSTAGRAM_MEDIA_INSIGHTS = Actionable(
+    slug="instagram.media_insights",
+    provider="instagram",
+    name="Read Instagram media & insights",
+    description=(
+        "List the account's recent media and read per-post insights "
+        "(reach, likes, comments, saves, shares) for reporting and analysis."
+    ),
+    required_capability=InstagramCapability.INSIGHTS.value,
 )
 
 
@@ -129,6 +161,8 @@ ACTIONABLES: dict[str, Actionable] = {
         TELEGRAM_SEND_DIRECT_DM,
         INSTAGRAM_SEND_DIRECT_DM,
         INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE,
+        INSTAGRAM_MANAGE_COMMENTS,
+        INSTAGRAM_MEDIA_INSIGHTS,
         TASKS_SCHEDULE_ONE_OFF,
         TASKS_CREATE_RECURRING_JOB,
         SYSTEM_SEND_MESSAGE,

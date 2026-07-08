@@ -21,7 +21,9 @@ import {
   Stack,
   Text,
   Title,
+  Tooltip,
 } from "@mantine/core";
+import { IconBriefcase, IconPlug, IconUser } from "@tabler/icons-react";
 import { useWorkspacePage } from "@/hooks/use-workspace-page";
 import { fetchCyberIdentities } from "@/lib/workspace-cyber-identities";
 import { fetchWorkspaceIntegrations } from "@/lib/workspace-integrations";
@@ -33,13 +35,188 @@ import {
   artifactTitle,
   deleteWorkspaceArtifact,
   fetchWorkspaceArtifacts,
-  formatArtifactBytes,
   isHtmlTextArtifact,
   type ArtifactKind,
   type WorkspaceArtifact,
 } from "@/lib/workspace-artifacts";
 
-const ARTIFACT_CARD_PREVIEW_PX = 280;
+const ARTIFACT_CARD_PREVIEW_PX = 200;
+
+function stopCardNavigation(event: React.MouseEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function ArtifactMetaIcons({ row }: { row: WorkspaceArtifact }) {
+  const identityLabel = row.identity?.display_name ?? "None";
+  const jobLabel = row.task_execution?.job_role_name || "None";
+  const integrationLabel = row.integration_account
+    ? `${row.integration_account.display_name || row.integration_account.external_account_id} (${row.integration_account.provider})`
+    : "None";
+
+  const icons = [
+    { icon: <IconUser size={15} stroke={1.5} />, label: `Identity: ${identityLabel}` },
+    { icon: <IconBriefcase size={15} stroke={1.5} />, label: `Job: ${jobLabel}` },
+    { icon: <IconPlug size={15} stroke={1.5} />, label: `Integration: ${integrationLabel}` },
+  ];
+
+  return (
+    <Group gap={2} wrap="nowrap" onClick={stopCardNavigation}>
+      {icons.map((item) => (
+        <Tooltip key={item.label} label={item.label} withArrow position="top">
+          <ActionIcon variant="subtle" size="sm" color="gray" aria-label={item.label}>
+            {item.icon}
+          </ActionIcon>
+        </Tooltip>
+      ))}
+    </Group>
+  );
+}
+
+function ArtifactCardPreview({ row }: { row: WorkspaceArtifact }) {
+  const preview = artifactTextBody(row);
+  const previewImageUrl = artifactPreviewImageUrl(row);
+  const showHtmlPreview = isHtmlTextArtifact(row) && preview;
+
+  const frameStyle: React.CSSProperties = {
+    overflow: "hidden",
+    borderRadius: 8,
+    border: "1px solid var(--mantine-color-default-border)",
+    background: "var(--mantine-color-body)",
+    height: ARTIFACT_CARD_PREVIEW_PX,
+  };
+
+  if (previewImageUrl) {
+    return (
+      <Box
+        style={{
+          ...frameStyle,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Box
+          component="img"
+          src={previewImageUrl}
+          alt={artifactTitle(row)}
+          style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }}
+        />
+      </Box>
+    );
+  }
+
+  if (preview && !showHtmlPreview) {
+    return (
+      <Box p="sm" style={{ ...frameStyle, overflow: "auto", background: "var(--mantine-color-gray-light)" }}>
+        <Text size="sm" c="dimmed" lineClamp={6} style={{ whiteSpace: "pre-wrap" }}>
+          {preview}
+        </Text>
+      </Box>
+    );
+  }
+
+  if (showHtmlPreview) {
+    return (
+      <Center style={frameStyle}>
+        <Text size="sm" c="dimmed">
+          HTML document
+        </Text>
+      </Center>
+    );
+  }
+
+  if (row.media) {
+    return (
+      <Center style={frameStyle}>
+        <Text size="sm" c="dimmed" ta="center" px="md" lineClamp={2}>
+          {row.media.display_name}
+        </Text>
+      </Center>
+    );
+  }
+
+  return (
+    <Center style={frameStyle}>
+      <Text size="sm" c="dimmed">
+        No preview
+      </Text>
+    </Center>
+  );
+}
+
+function ArtifactCard({
+  row,
+  workspaceId,
+  onDelete,
+  deleteDisabled,
+}: {
+  row: WorkspaceArtifact;
+  workspaceId: number;
+  onDelete: () => void;
+  deleteDisabled: boolean;
+}) {
+  const href = `/workspaces/${workspaceId}/artifacts/${row.id}`;
+
+  return (
+    <Card
+      component={Link}
+      href={href}
+      withBorder
+      radius="md"
+      p="md"
+      style={{
+        display: "block",
+        textDecoration: "none",
+        color: "inherit",
+        transition: "border-color 120ms ease, background 120ms ease",
+      }}
+      styles={{
+        root: {
+          "&:hover": {
+            borderColor: "var(--mantine-color-wine-6)",
+            background: "var(--mantine-color-dark-6)",
+          },
+        },
+      }}
+    >
+      <Stack gap="sm">
+        <Group justify="space-between" align="flex-start" gap="xs" wrap="nowrap">
+          <Stack gap={4} style={{ minWidth: 0, flex: 1 }}>
+            <Badge variant="light" size="xs" w="fit-content">
+              {row.kind}
+            </Badge>
+            <Text fw={600} size="sm" lineClamp={2}>
+              {artifactTitle(row)}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {new Date(row.created).toLocaleString()}
+            </Text>
+          </Stack>
+          <Group gap={2} wrap="nowrap" align="flex-start">
+            <ArtifactMetaIcons row={row} />
+            <ActionIcon
+              variant="subtle"
+              color="red"
+              size="sm"
+              aria-label="Delete artifact"
+              title="Delete"
+              onClick={(event) => {
+                stopCardNavigation(event);
+                onDelete();
+              }}
+              disabled={deleteDisabled}
+            >
+              ✕
+            </ActionIcon>
+          </Group>
+        </Group>
+
+        <ArtifactCardPreview row={row} />
+      </Stack>
+    </Card>
+  );
+}
 
 export default function WorkspaceArtifactsPage() {
   const queryClient = useQueryClient();
@@ -329,254 +506,15 @@ export default function WorkspaceArtifactsPage() {
           </Paper>
         ) : (
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-            {artifacts.map((row) => {
-              const preview = artifactTextBody(row);
-              const previewImageUrl = artifactPreviewImageUrl(row);
-              const mediaMeta = row.media
-                ? [row.media.mime_type, formatArtifactBytes(row.media.byte_size)].filter(Boolean).join(" · ")
-                : "";
-              const showHtmlPreview = isHtmlTextArtifact(row) && preview;
-              const hasInlinePreview = Boolean(preview || previewImageUrl);
-              return (
-                <Card key={row.id} withBorder radius="md" p="lg">
-                  <Stack gap="sm">
-                    <Group justify="space-between" align="flex-start" gap="xs" wrap="nowrap">
-                      <div style={{ minWidth: 0 }}>
-                        <Badge variant="light" mb={4}>
-                          {row.kind}
-                        </Badge>
-                        <Title order={4}>{artifactTitle(row)}</Title>
-                        <Text size="xs" c="dimmed">
-                          {new Date(row.created).toLocaleString()}
-                        </Text>
-                      </div>
-                      <ActionIcon
-                        variant="subtle"
-                        color="red"
-                        aria-label="Delete artifact"
-                        title="Delete"
-                        onClick={() => setArtifactToDelete(row)}
-                        disabled={deleteMutation.isPending}
-                      >
-                        ✕
-                      </ActionIcon>
-                    </Group>
-
-                    {hasInlinePreview ? (
-                      <Paper withBorder radius="sm" p="sm" bg="var(--mantine-color-gray-light)">
-                        <Stack gap="xs">
-                          {previewImageUrl ? (
-                            <Box
-                              h={ARTIFACT_CARD_PREVIEW_PX}
-                              w="100%"
-                              style={{
-                                overflow: "hidden",
-                                borderRadius: 8,
-                                border: "1px solid var(--mantine-color-default-border)",
-                                background: "var(--mantine-color-body)",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              <Box
-                                component="img"
-                                src={previewImageUrl}
-                                alt={artifactTitle(row)}
-                                style={{
-                                  display: "block",
-                                  width: "100%",
-                                  height: "100%",
-                                  objectFit: "contain",
-                                }}
-                              />
-                            </Box>
-                          ) : null}
-                          {preview ? (
-                            previewImageUrl ? (
-                              <Box
-                                mah={200}
-                                p="sm"
-                                style={{
-                                  overflow: "auto",
-                                  borderRadius: 8,
-                                  border: "1px solid var(--mantine-color-default-border)",
-                                  background: "var(--mantine-color-gray-light)",
-                                }}
-                              >
-                                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                                  {preview}
-                                </Text>
-                              </Box>
-                            ) : (
-                              <Box
-                                h={ARTIFACT_CARD_PREVIEW_PX}
-                                w="100%"
-                                style={{
-                                  overflow: "hidden",
-                                  borderRadius: 8,
-                                  border: "1px solid var(--mantine-color-default-border)",
-                                  background: "var(--mantine-color-body)",
-                                }}
-                              >
-                                {showHtmlPreview ? (
-                                  <Box
-                                    component="iframe"
-                                    srcDoc={preview}
-                                    sandbox=""
-                                    title={artifactTitle(row)}
-                                    style={{
-                                      display: "block",
-                                      width: "100%",
-                                      height: "100%",
-                                      border: 0,
-                                      background: "white",
-                                    }}
-                                  />
-                                ) : (
-                                  <Box
-                                    h="100%"
-                                    p="sm"
-                                    style={{
-                                      overflow: "auto",
-                                      background: "var(--mantine-color-gray-light)",
-                                    }}
-                                  >
-                                    <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                                      {preview}
-                                    </Text>
-                                  </Box>
-                                )}
-                              </Box>
-                            )
-                          ) : null}
-                          <Button
-                            component={Link}
-                            href={`/workspaces/${workspaceId}/artifacts/${row.id}`}
-                            variant="subtle"
-                            size="xs"
-                            w="fit-content"
-                          >
-                            Open
-                          </Button>
-                        </Stack>
-                      </Paper>
-                    ) : row.media ? (
-                      <Paper withBorder radius="sm" p="sm" bg="var(--mantine-color-gray-light)">
-                        <Stack gap="xs">
-                          <Box
-                            h={ARTIFACT_CARD_PREVIEW_PX}
-                            w="100%"
-                            style={{
-                              overflow: "hidden",
-                              borderRadius: 8,
-                              border: "1px solid var(--mantine-color-default-border)",
-                              background: "var(--mantine-color-body)",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            {previewImageUrl ? (
-                              <Box
-                                component="img"
-                                src={previewImageUrl}
-                                alt={artifactTitle(row)}
-                                style={{
-                                  display: "block",
-                                  width: "100%",
-                                  height: "100%",
-                                  objectFit: "contain",
-                                }}
-                              />
-                            ) : (
-                              <Text size="sm" c="dimmed" ta="center" px="md">
-                                {mediaMeta || "Media file"}
-                              </Text>
-                            )}
-                          </Box>
-                          <div>
-                            <Text size="sm" fw={500}>
-                              {row.media.display_name}
-                            </Text>
-                            {mediaMeta ? (
-                              <Text size="xs" c="dimmed">
-                                {mediaMeta}
-                              </Text>
-                            ) : null}
-                          </div>
-                          <Button
-                            component={Link}
-                            href={`/workspaces/${workspaceId}/artifacts/${row.id}`}
-                            variant="subtle"
-                            size="xs"
-                            w="fit-content"
-                          >
-                            Open
-                          </Button>
-                        </Stack>
-                      </Paper>
-                    ) : (
-                      <Paper withBorder radius="sm" p="sm" bg="var(--mantine-color-gray-light)">
-                        <Stack gap="xs">
-                          <Box
-                            h={ARTIFACT_CARD_PREVIEW_PX}
-                            w="100%"
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              borderRadius: 8,
-                              border: "1px solid var(--mantine-color-default-border)",
-                            }}
-                          >
-                            <Text size="sm" c="dimmed" ta="center" px="md">
-                              No inline preview for this artifact kind.
-                            </Text>
-                          </Box>
-                          <Button
-                            component={Link}
-                            href={`/workspaces/${workspaceId}/artifacts/${row.id}`}
-                            variant="light"
-                            size="xs"
-                            w="fit-content"
-                          >
-                            Open details
-                          </Button>
-                        </Stack>
-                      </Paper>
-                    )}
-
-                    <Stack gap={4}>
-                      <Text size="xs" c="dimmed">
-                        Identity: {row.identity?.display_name ?? "None"}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        Job: {row.task_execution?.job_role_name || "None"}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        Integration:{" "}
-                        {row.integration_account
-                          ? `${row.integration_account.display_name || row.integration_account.external_account_id} (${row.integration_account.provider})`
-                          : "None"}
-                      </Text>
-                    </Stack>
-
-                    {row.integration_account ? (
-                      <Button
-                        component={Link}
-                        href={`/workspaces/${workspaceId}/integrations/${row.integration_account.id}`}
-                        variant="subtle"
-                        size="xs"
-                        w="fit-content"
-                      >
-                        Open integration
-                      </Button>
-                    ) : null}
-                  </Stack>
-                </Card>
-              );
-            })}
+            {artifacts.map((row) => (
+              <ArtifactCard
+                key={row.id}
+                row={row}
+                workspaceId={workspaceId}
+                onDelete={() => setArtifactToDelete(row)}
+                deleteDisabled={deleteMutation.isPending}
+              />
+            ))}
           </SimpleGrid>
         )}
 

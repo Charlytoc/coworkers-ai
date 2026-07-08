@@ -11,7 +11,6 @@ from .cyber_identity import CyberIdentity
 from .memory import Memory
 from .identity_asset import IdentityAsset
 from .integration_account import IntegrationAccount
-from .integration_bridge import IntegrationBridge
 from .integration_event import IntegrationEvent
 from .job_assignment import JobAssignment
 from .task_execution import TaskExecution
@@ -33,7 +32,6 @@ __all__ = [
     "Memory",
     "IdentityAsset",
     "IntegrationAccount",
-    "IntegrationBridge",
     "IntegrationEvent",
     "JobAssignment",
     "TaskExecution",

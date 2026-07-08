@@ -572,6 +572,9 @@ class ActionableCatalogItem(Schema):
     provider: str
     integration_account_id: str | None = None
     integration: dict | None = None
+    required_capability: str | None = None
+    available: bool = True
+    unavailable_reason: str | None = None
 
 
 @router.get(
