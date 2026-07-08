@@ -259,15 +259,19 @@ def instagram_get_user_info(access_token: str) -> dict[str, Any]:
 
 def instagram_send_message(
     access_token: str,
-    ig_user_id: str,
+    messaging_object_id: str,
     recipient_igsid: str,
     text: str,
     *,
     graph_base: str = INSTAGRAM_GRAPH_BASE,
 ) -> dict[str, Any]:
-    """Send a text DM from the IG Business Account to recipient_igsid."""
+    """Send a text DM to ``recipient_igsid``.
+
+    ``messaging_object_id`` is the IG professional account id (Instagram Login) or the
+    linked Facebook Page id (Facebook Login / Messenger Platform).
+    """
     resp = requests.post(
-        f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{ig_user_id}/messages",
+        f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{messaging_object_id}/messages",
         headers={"Authorization": f"Bearer {access_token}"},
         json={
             "recipient": {"id": recipient_igsid},
@@ -831,6 +835,34 @@ def get_ig_user_id(account: IntegrationAccount) -> str:
     return str(
         (account.config or {}).get(CONFIG_IG_USER_ID, account.external_account_id)
     ).strip()
+
+
+def instagram_messaging_object_id(account: IntegrationAccount) -> str:
+    """Graph object id for ``.../messages`` — Page id for Facebook Login, IG user id otherwise."""
+    cfg = account.config or {}
+    if resolve_auth_method(cfg.get(CONFIG_AUTH_METHOD)) == InstagramAuthMethod.FACEBOOK_LOGIN:
+        page_id = str(cfg.get(CONFIG_FACEBOOK_PAGE_ID) or "").strip()
+        if page_id:
+            return page_id
+    return get_ig_user_id(account)
+
+
+def instagram_send_message_for_account(
+    account: IntegrationAccount,
+    recipient_igsid: str,
+    text: str,
+) -> dict[str, Any]:
+    token = get_access_token(account)
+    object_id = instagram_messaging_object_id(account)
+    if not token or not object_id:
+        raise ValueError("Instagram token or messaging endpoint id not configured")
+    return instagram_send_message(
+        token,
+        object_id,
+        recipient_igsid,
+        text,
+        graph_base=graph_base_for_account(account),
+    )
 
 
 def enable_integration_webhook_subscriptions(account: IntegrationAccount) -> dict[str, Any]:

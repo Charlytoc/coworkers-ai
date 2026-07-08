@@ -438,6 +438,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{workspace_id}/artifacts/{artifact_id}/instagram/comments/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Instagram Artifact Comments */
+        get: operations["core_routers_workspace_artifacts_get_instagram_artifact_comments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/integrations/telegram/webhook/{webhook_path_token}/": {
         parameters: {
             query?: never;
@@ -1212,6 +1229,24 @@ export interface components {
             job_assignment_id: string | null;
             /** Job Role Name */
             job_role_name: string;
+        };
+        /** InstagramArtifactCommentOut */
+        InstagramArtifactCommentOut: {
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
+            /** Username */
+            username: string;
+            /** Timestamp */
+            timestamp?: string | null;
+        };
+        /** InstagramArtifactCommentsResponse */
+        InstagramArtifactCommentsResponse: {
+            /** Media Id */
+            media_id: string;
+            /** Comments */
+            comments: components["schemas"]["InstagramArtifactCommentOut"][];
         };
         /** TelegramConnectResponse */
         TelegramConnectResponse: {
@@ -2798,6 +2833,65 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
+            };
+        };
+    };
+    core_routers_workspace_artifacts_get_instagram_artifact_comments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: number;
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstagramArtifactCommentsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseSchema"];
+                };
             };
             /** @description Unauthorized */
             401: {

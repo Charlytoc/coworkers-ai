@@ -25,6 +25,7 @@ from core.services.instagram_service import (
     disconnect_instagram_account,
     enable_integration_webhook_subscriptions,
     graph_base_for_account,
+    instagram_messaging_object_id,
     INSTAGRAM_WEBHOOK_SUBSCRIBED_FIELDS,
     store_oauth_state,
 )
@@ -271,3 +272,31 @@ class IntegrationWebhookSubscriptionRoutingTests(TestCase):
             ig_user_id="ig_lite",
             graph_base="https://graph.instagram.com",
         )
+
+
+class InstagramMessagingObjectIdTests(TestCase):
+    def setUp(self) -> None:
+        org = Organization.objects.create(name="msg", domain="msg.example.test", status="active")
+        self.workspace = Workspace.objects.create(organization=org, name="msg-ws")
+
+    def test_facebook_login_uses_page_id(self) -> None:
+        account = IntegrationAccount.objects.create(
+            workspace=self.workspace,
+            provider=IntegrationAccount.Provider.INSTAGRAM,
+            external_account_id="ig1",
+            config={
+                "auth_method": "facebook_login",
+                "facebook_page_id": "page_123",
+                "ig_user_id": "ig1",
+            },
+        )
+        self.assertEqual(instagram_messaging_object_id(account), "page_123")
+
+    def test_instagram_login_uses_ig_user_id(self) -> None:
+        account = IntegrationAccount.objects.create(
+            workspace=self.workspace,
+            provider=IntegrationAccount.Provider.INSTAGRAM,
+            external_account_id="ig_lite",
+            config={"auth_method": "instagram_login", "ig_user_id": "ig_lite"},
+        )
+        self.assertEqual(instagram_messaging_object_id(account), "ig_lite")

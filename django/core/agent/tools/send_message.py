@@ -12,9 +12,8 @@ from core.schemas.send_target import ResolvedSendTarget, SendTargetProvider
 from core.services.conversations import append_assistant_message, get_or_create_active_conversation
 from core.services.instagram_service import (
     get_access_token,
-    get_ig_user_id,
-    graph_base_for_account,
-    instagram_send_message,
+    instagram_messaging_object_id,
+    instagram_send_message_for_account,
 )
 from core.services.integration_senders import upsert_sender
 from core.schemas.integration_account import SenderApprovalStatus
@@ -309,16 +308,13 @@ def make_send_message_tool(
 
         if target.provider == SendTargetProvider.INSTAGRAM:
             access = get_access_token(account)
-            ig_uid = get_ig_user_id(account)
-            if not access or not ig_uid:
-                return "Error: Instagram token or ig_user_id not configured."
+            if not access or not instagram_messaging_object_id(account):
+                return "Error: Instagram token or messaging endpoint not configured."
             try:
-                sent = instagram_send_message(
-                    access,
-                    ig_uid,
+                sent = instagram_send_message_for_account(
+                    account,
                     target.external_thread_id,
                     text,
-                    graph_base=graph_base_for_account(account),
                 )
             except ValueError as exc:
                 return f"Error: {exc}"
@@ -446,16 +442,13 @@ def make_send_direct_message_tool(
 
         if target.provider == SendTargetProvider.INSTAGRAM:
             access = get_access_token(account)
-            ig_uid = get_ig_user_id(account)
-            if not access or not ig_uid:
-                return "Error: Instagram token or ig_user_id not configured."
+            if not access or not instagram_messaging_object_id(account):
+                return "Error: Instagram token or messaging endpoint not configured."
             try:
-                sent = instagram_send_message(
-                    access,
-                    ig_uid,
+                sent = instagram_send_message_for_account(
+                    account,
                     target.external_thread_id,
                     text,
-                    graph_base=graph_base_for_account(account),
                 )
             except ValueError as exc:
                 return f"Error: {exc}"

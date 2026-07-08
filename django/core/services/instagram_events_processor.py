@@ -20,8 +20,7 @@ from core.services.instagram_service import (
     get_ig_user_id,
     instagram_dm_sender_handle_from_webhook_or_profile,
     instagram_fetch_participant_profile,
-    instagram_send_message,
-    graph_base_for_account,
+    instagram_send_message_for_account,
 )
 from core.services.job_task_processor_agent import JobTaskProcessorAgent
 
@@ -77,12 +76,10 @@ def process_instagram_dm(
         ig_user_id = get_ig_user_id(account)
         if token and ig_user_id:
             try:
-                instagram_send_message(
-                    token,
-                    ig_user_id,
+                instagram_send_message_for_account(
+                    account,
                     sender_igsid,
                     CLEAR_CONTEXT_REPLY,
-                    graph_base=graph_base_for_account(account),
                 )
             except Exception:
                 logger.exception(
