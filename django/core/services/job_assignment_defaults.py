@@ -11,6 +11,8 @@ from core.integrations.actionables import (
     INSTAGRAM_MEDIA_INSIGHTS,
     INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE,
     INSTAGRAM_REPLY_DM,
+    MEMORY_RECALL,
+    MEMORY_REMEMBER,
     TASKS_CREATE_RECURRING_JOB,
     TASKS_SCHEDULE_ONE_OFF,
     TELEGRAM_REPLY_DM,
@@ -134,6 +136,14 @@ def build_telegram_default_job_config(
                 actionable_slug=TASKS_CREATE_RECURRING_JOB.slug,
                 integration_account_id=None,
             ),
+            JobAssignmentAction(
+                actionable_slug=MEMORY_REMEMBER.slug,
+                integration_account_id=None,
+            ),
+            JobAssignmentAction(
+                actionable_slug=MEMORY_RECALL.slug,
+                integration_account_id=None,
+            ),
         ],
     )
 
@@ -179,6 +189,14 @@ def build_instagram_default_job_config(
             ),
             JobAssignmentAction(
                 actionable_slug=TASKS_CREATE_RECURRING_JOB.slug,
+                integration_account_id=None,
+            ),
+            JobAssignmentAction(
+                actionable_slug=MEMORY_REMEMBER.slug,
+                integration_account_id=None,
+            ),
+            JobAssignmentAction(
+                actionable_slug=MEMORY_RECALL.slug,
                 integration_account_id=None,
             ),
         ]

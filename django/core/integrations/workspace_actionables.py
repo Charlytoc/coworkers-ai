@@ -10,6 +10,8 @@ from ninja.errors import HttpError
 from core.integrations.actionables import (
     ACTIONABLES,
     ARTIFACTS_CALL_CREATOR,
+    MEMORY_RECALL,
+    MEMORY_REMEMBER,
     SYSTEM_SEND_MESSAGE,
     TASKS_CREATE_RECURRING_JOB,
     TASKS_SCHEDULE_ONE_OFF,
@@ -141,6 +143,8 @@ def list_actionable_catalog_for_workspace(workspace: Workspace) -> list[dict[str
         ACTIONABLES[SYSTEM_SEND_MESSAGE.slug],
         ACTIONABLES[TASKS_SCHEDULE_ONE_OFF.slug],
         ACTIONABLES[TASKS_CREATE_RECURRING_JOB.slug],
+        ACTIONABLES[MEMORY_REMEMBER.slug],
+        ACTIONABLES[MEMORY_RECALL.slug],
         ACTIONABLES[ARTIFACTS_CALL_CREATOR.slug],
     ):
         out.append(

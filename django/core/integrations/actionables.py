@@ -131,6 +131,28 @@ SYSTEM_SEND_MESSAGE = Actionable(
 )
 
 
+MEMORY_REMEMBER = Actionable(
+    slug="memory.remember",
+    provider="system",
+    name="Remember (save long-term memory)",
+    description=(
+        "Let the agent save a durable memory (a fact about the user, a preference, or reusable "
+        "knowledge). 'core' memories are always injected into future runs; 'knowledge' memories are "
+        "retrieved on demand by topic. Scoped to this job and its identity."
+    ),
+)
+
+MEMORY_RECALL = Actionable(
+    slug="memory.recall",
+    provider="system",
+    name="Recall (search long-term memory)",
+    description=(
+        "Let the agent search its saved 'knowledge' memories by topic or text while running "
+        "(core memories are already provided automatically)."
+    ),
+)
+
+
 ARTIFACTS_CALL_CREATOR = Actionable(
     slug="artifacts.call_creator",
     provider="system",
@@ -166,6 +188,8 @@ ACTIONABLES: dict[str, Actionable] = {
         TASKS_SCHEDULE_ONE_OFF,
         TASKS_CREATE_RECURRING_JOB,
         SYSTEM_SEND_MESSAGE,
+        MEMORY_REMEMBER,
+        MEMORY_RECALL,
         ARTIFACTS_CALL_CREATOR,
         ARTIFACTS_CREATE_TEXT,
         ARTIFACTS_CREATE_IMAGE,

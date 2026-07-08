@@ -12,6 +12,8 @@ from core.agent.tools.create_text_artifact import make_create_text_artifact_tool
 from core.agent.tools.instagram_comments import make_instagram_comments_tool
 from core.agent.tools.instagram_insights import make_instagram_insights_tool
 from core.agent.tools.publish_external_resource import make_publish_external_resource_tool
+from core.agent.tools.recall import make_recall_tool
+from core.agent.tools.remember import make_remember_tool
 from core.agent.tools.schedule_one_off_task import make_schedule_one_off_task_tool
 from core.agent.tools.send_message import make_send_direct_message_tool, make_send_message_tool
 from core.integrations.actionables import (
@@ -21,6 +23,8 @@ from core.integrations.actionables import (
     INSTAGRAM_MANAGE_COMMENTS,
     INSTAGRAM_MEDIA_INSIGHTS,
     INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE,
+    MEMORY_RECALL,
+    MEMORY_REMEMBER,
     TASKS_CREATE_RECURRING_JOB,
     TASKS_SCHEDULE_ONE_OFF,
 )
@@ -31,6 +35,7 @@ from core.integrations.integration_provider_registry import (
 from core.models import Conversation, CyberIdentity, IntegrationAccount, JobAssignment, TaskExecution
 from core.schemas.channel import Channel, InstagramDmChannel, TelegramPrivateChannel, WebChatChannel
 from core.schemas.job_assignment import JobAssignmentAction, JobAssignmentEventTrigger
+from core.services.memory import core_memories_for_job
 from core.services.send_targets import collect_resolved_send_targets, reindex_send_targets
 
 
@@ -146,6 +151,10 @@ class JobTaskProcessorAgent:
                 _add(make_create_text_artifact_tool(task_execution=task_execution))
             elif slug == ARTIFACTS_CREATE_IMAGE.slug and task_execution is not None:
                 _add(make_create_image_artifact_tool(task_execution=task_execution))
+            elif slug == MEMORY_REMEMBER.slug:
+                _add(make_remember_tool(job=job))
+            elif slug == MEMORY_RECALL.slug:
+                _add(make_recall_tool(job=job))
         return tools
 
     @staticmethod
@@ -174,6 +183,16 @@ class JobTaskProcessorAgent:
             lines.append(
                 "- You can read Instagram content and analytics with `instagram_insights` "
                 "(list recent media, read per-post reach/likes/comments/saves/shares)."
+            )
+        if MEMORY_REMEMBER.slug in action_slugs:
+            lines.append(
+                "- You can save durable memories with `remember` (use `core` for stable facts/"
+                "preferences that should always be remembered, `knowledge` for occasional reference)."
+            )
+        if MEMORY_RECALL.slug in action_slugs:
+            lines.append(
+                "- You can search your saved knowledge with `recall` (by topic or text) when you need "
+                "details that aren't already in your context."
             )
         if not lines:
             return None
@@ -303,6 +322,16 @@ class JobTaskProcessorAgent:
         else:
             parts.append(
                 "**Persona:** This job has no cyber identity in scope; act as a neutral workspace agent."
+            )
+
+        core_memories = core_memories_for_job(job)
+        if core_memories:
+            mem_lines = "\n".join(f"- {m.content.strip()}" for m in core_memories)
+            parts.append(
+                "**What you remember (core long-term memory):**\n"
+                f"{mem_lines}\n"
+                "Treat these as established facts about the user/context. Keep them in mind; do not "
+                "repeat them verbatim unless relevant."
             )
 
         dm_targets = collect_resolved_send_targets(
