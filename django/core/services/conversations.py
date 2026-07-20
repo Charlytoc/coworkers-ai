@@ -204,10 +204,14 @@ def prior_exchange_messages(
     ``exclude_message_id`` lets the caller skip the current triggering message (so the caller
     can append a richer user-turn version later).
     """
-    qs = Message.objects.filter(conversation=conversation).order_by("created")
+    qs = Message.objects.filter(conversation=conversation)
     if exclude_message_id is not None:
         qs = qs.exclude(id=exclude_message_id)
-    rows = list(qs[:max_messages])
+    # Keep the MOST RECENT ``max_messages`` (newest-first slice in the DB), then present oldest-first.
+    # Slicing an ascending queryset would instead keep the oldest messages and silently drop every new
+    # turn once the conversation grows past ``max_messages`` — the agent would never see recent replies.
+    rows = list(qs.order_by("-created")[:max_messages])
+    rows.reverse()
 
     out: list[ExchangeMessage] = []
     for m in rows:

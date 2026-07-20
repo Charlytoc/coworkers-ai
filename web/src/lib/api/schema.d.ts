@@ -1064,6 +1064,15 @@ export interface components {
             integration?: {
                 [key: string]: unknown;
             } | null;
+            /** Required Capability */
+            required_capability?: string | null;
+            /**
+             * Available
+             * @default true
+             */
+            available: boolean;
+            /** Unavailable Reason */
+            unavailable_reason?: string | null;
         };
         /** JobAssignmentResponse */
         JobAssignmentResponse: {
