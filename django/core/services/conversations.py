@@ -218,5 +218,11 @@ def prior_exchange_messages(
         text = (m.content_text or "").strip()
         if not text and m.content_structured is None:
             continue
-        out.append(ExchangeMessage(role=m.role, content=text or m.content_structured or ""))
+        out.append(
+            ExchangeMessage(
+                role=m.role,
+                content=text or m.content_structured or "",
+                created=m.created.isoformat(),
+            )
+        )
     return out

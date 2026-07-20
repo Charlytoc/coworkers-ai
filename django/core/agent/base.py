@@ -133,7 +133,8 @@ class Agent:
     def _filter_exchange_messages(self, messages: List[Message | FunctionCallOutput | ResponseOutputItem | ResponseOutputMessage]) -> List[ExchangeMessage]:
         """Filter and convert messages to ExchangeMessages, handling all message types.
 
-        Tool calls and their results are kept (as ``tool_call`` / ``tool_result`` entries) so
+        Tool calls and their results are kept (as ``tool_call`` / ``tool_result`` entries, both
+        attributed to the assistant since only the assistant ever calls tools) so
         ``AgentSessionLog.outputs`` retains a full, debuggable trace of what the agent did during
         the run, not just its user-visible text.
         """
@@ -146,7 +147,8 @@ class Agent:
                 except (TypeError, ValueError):
                     arguments = message.arguments
                 exchange_messages.append(ExchangeMessage(
-                    role="tool_call",
+                    role="assistant",
+                    type="tool_call",
                     content={
                         "call_id": message.call_id,
                         "name": message.name,
@@ -155,7 +157,8 @@ class Agent:
                 ))
             elif msg_type == "function_call_output":
                 exchange_messages.append(ExchangeMessage(
-                    role="tool_result",
+                    role="assistant",
+                    type="tool_result",
                     content={
                         "call_id": message.call_id,
                         "output": message.output,
