@@ -313,6 +313,7 @@ def instagram_create_image_media_container(
     ig_user_id: str,
     image_url: str,
     caption: str = "",
+    is_carousel_item: bool = False,
     graph_base: str = INSTAGRAM_GRAPH_BASE,
 ) -> dict[str, Any]:
     uid = str(ig_user_id or "").strip()
@@ -326,13 +327,17 @@ def instagram_create_image_media_container(
         "media_type": "IMAGE",
         "access_token": access_token,
     }
-    if caption.strip():
+    if is_carousel_item:
+        # Carousel children carry no caption; the caption lives on the parent container.
+        payload["is_carousel_item"] = "true"
+    elif caption.strip():
         payload["caption"] = caption.strip()
     endpoint = f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{uid}/media"
     logger.info(
         "instagram media container request ig_user_id=%s media_type=IMAGE "
-        "caption_len=%s image_url=%s endpoint=%s",
+        "is_carousel_item=%s caption_len=%s image_url=%s endpoint=%s",
         uid,
+        is_carousel_item,
         len(caption.strip()),
         url,
         endpoint,
@@ -529,6 +534,137 @@ def instagram_publish_image_post(
         graph_base=graph_base,
     )
     return {"container": container, "published": published}
+
+
+INSTAGRAM_CAROUSEL_MIN_ITEMS = 2
+INSTAGRAM_CAROUSEL_MAX_ITEMS = 10
+
+
+def instagram_create_carousel_container(
+    *,
+    access_token: str,
+    ig_user_id: str,
+    children: list[str],
+    caption: str = "",
+    graph_base: str = INSTAGRAM_GRAPH_BASE,
+) -> dict[str, Any]:
+    uid = str(ig_user_id or "").strip()
+    child_ids = [str(cid or "").strip() for cid in children]
+    if not access_token or not uid:
+        raise ValueError("Instagram token or ig_user_id not configured")
+    if any(not cid for cid in child_ids) or not (
+        INSTAGRAM_CAROUSEL_MIN_ITEMS <= len(child_ids) <= INSTAGRAM_CAROUSEL_MAX_ITEMS
+    ):
+        raise ValueError(
+            "Instagram carousel requires between "
+            f"{INSTAGRAM_CAROUSEL_MIN_ITEMS} and {INSTAGRAM_CAROUSEL_MAX_ITEMS} child container ids"
+        )
+    payload = {
+        "media_type": "CAROUSEL",
+        "children": ",".join(child_ids),
+        "access_token": access_token,
+    }
+    if caption.strip():
+        payload["caption"] = caption.strip()
+    endpoint = f"{graph_base}/{INSTAGRAM_GRAPH_API_VERSION}/{uid}/media"
+    logger.info(
+        "instagram carousel container request ig_user_id=%s children=%s caption_len=%s endpoint=%s",
+        uid,
+        len(child_ids),
+        len(caption.strip()),
+        endpoint,
+    )
+    resp = requests.post(
+        endpoint,
+        data=payload,
+        timeout=60,
+    )
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        logger.warning(
+            "instagram carousel container invalid_json status=%s body_preview=%r",
+            resp.status_code,
+            resp.text[:1000],
+        )
+        raise ValueError("Instagram carousel container returned invalid JSON") from exc
+    if resp.status_code >= 400:
+        logger.warning(
+            "instagram carousel container failed status=%s children=%s response=%s",
+            resp.status_code,
+            child_ids,
+            data,
+        )
+    else:
+        logger.info(
+            "instagram carousel container response status=%s container_id=%s children=%s",
+            resp.status_code,
+            data.get("id"),
+            len(child_ids),
+        )
+    if "error" in data:
+        raise ValueError(_instagram_graph_error_message(data, "Instagram carousel container failed"))
+    if not data.get("id"):
+        raise ValueError("Instagram carousel container returned no id")
+    return data
+
+
+def instagram_publish_carousel_post(
+    *,
+    access_token: str,
+    ig_user_id: str,
+    image_urls: list[str],
+    caption: str = "",
+    graph_base: str = INSTAGRAM_GRAPH_BASE,
+) -> dict[str, Any]:
+    """Publish an image carousel: item containers -> parent CAROUSEL container -> publish.
+
+    ``image_urls`` order defines the slide order shown on Instagram.
+    """
+    urls = [str(url or "").strip() for url in image_urls]
+    if any(not url for url in urls) or not (
+        INSTAGRAM_CAROUSEL_MIN_ITEMS <= len(urls) <= INSTAGRAM_CAROUSEL_MAX_ITEMS
+    ):
+        raise ValueError(
+            "Instagram carousel requires between "
+            f"{INSTAGRAM_CAROUSEL_MIN_ITEMS} and {INSTAGRAM_CAROUSEL_MAX_ITEMS} image URLs"
+        )
+    children: list[dict[str, Any]] = []
+    for url in urls:
+        child = instagram_create_image_media_container(
+            access_token=access_token,
+            ig_user_id=ig_user_id,
+            image_url=url,
+            is_carousel_item=True,
+            graph_base=graph_base,
+        )
+        children.append(child)
+    for child in children:
+        instagram_wait_for_media_container_ready_for_publish(
+            access_token=access_token,
+            container_id=str(child["id"]),
+            graph_base=graph_base,
+        )
+    container = instagram_create_carousel_container(
+        access_token=access_token,
+        ig_user_id=ig_user_id,
+        children=[str(child["id"]) for child in children],
+        caption=caption,
+        graph_base=graph_base,
+    )
+    creation_id = str(container["id"])
+    instagram_wait_for_media_container_ready_for_publish(
+        access_token=access_token,
+        container_id=creation_id,
+        graph_base=graph_base,
+    )
+    published = instagram_publish_media_container(
+        access_token=access_token,
+        ig_user_id=ig_user_id,
+        creation_id=creation_id,
+        graph_base=graph_base,
+    )
+    return {"children": children, "container": container, "published": published}
 
 
 # ---------------------------------------------------------------------------
@@ -1511,6 +1647,8 @@ class InstagramIntegrationService:
         instagram_wait_for_media_container_ready_for_publish
     )
     instagram_publish_image_post = staticmethod(instagram_publish_image_post)
+    instagram_create_carousel_container = staticmethod(instagram_create_carousel_container)
+    instagram_publish_carousel_post = staticmethod(instagram_publish_carousel_post)
     instagram_enable_webhook_subscriptions = staticmethod(
         instagram_enable_webhook_subscriptions
     )

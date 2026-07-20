@@ -72,7 +72,7 @@ INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE = Actionable(
     slug="instagram.publish_external_resource",
     provider="instagram",
     name="Publish Instagram post",
-    description="Publish a generated artifact as an Instagram feed post and save the provider resource as an artifact.",
+    description="Publish generated artifacts as an Instagram feed post (single image or carousel) and save the provider resource as an artifact.",
     required_capability=InstagramCapability.PUBLISH.value,
 )
 

@@ -167,12 +167,35 @@ class JobTaskProcessorAgent:
                 "requests to generate images, captions, drafts, or publish-ready content."
             )
         if INSTAGRAM_PUBLISH_EXTERNAL_RESOURCE.slug in action_slugs:
+            if ARTIFACTS_CALL_CREATOR.slug in action_slugs:
+                lines.append(
+                    "- This job has Instagram publishing rights. If the user asks you to create or publish "
+                    "an Instagram post, call `call_artifact_creator` and include explicit instructions for "
+                    "the child task to create the required assets and call `publish_external_resource` with "
+                    "`resource_type: \"instagram.post\"`. A post can be a single image or a carousel of "
+                    "2-10 images; when a carousel fits the content better, say so in the instructions and "
+                    "include the intended slide count and a per-slide outline. After the child finishes, "
+                    "you will run again to notify the user."
+                )
+            else:
+                lines.append(
+                    "- You can publish Instagram posts with `publish_external_resource` "
+                    "(`resource_type: \"instagram.post\"`). Attach 1 image artifact for a single-image "
+                    "post, or 2-10 image artifacts for a carousel — the attachment order is the slide "
+                    "order. Carousel slides must share the same size/aspect ratio and be generated as "
+                    "jpeg."
+                )
+        if ARTIFACTS_CREATE_IMAGE.slug in action_slugs:
             lines.append(
-                "- This job has Instagram publishing rights. If the user asks you to create or publish "
-                "an Instagram post, call `call_artifact_creator` and include explicit instructions for "
-                "the child task to create the required assets and call `publish_external_resource` with "
-                "`resource_type: \"instagram.post\"`. After the child finishes, you will run again to "
-                "notify the user."
+                "- You can generate images with `create_image_artifact` (one image per call). When "
+                "several images belong to one deliverable (e.g. a carousel), first draft a short "
+                "reusable STYLE BLOCK — palette, medium/rendering style, composition and layout rules, "
+                "typography treatment, mood — then prepend that exact block verbatim to every image "
+                "prompt, changing only the slide-specific content. Pick the consistency mechanism that "
+                "fits the content: storytelling needs the same characters, style words, and scene "
+                "continuity across slides; educational or listicle content needs the same visual "
+                "structure (header placement, numbering style, background) on every slide. Always use "
+                "the same `size` and `output_format` for every image in the set."
             )
         if INSTAGRAM_MANAGE_COMMENTS.slug in action_slugs:
             lines.append(

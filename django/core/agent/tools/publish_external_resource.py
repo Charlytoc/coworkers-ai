@@ -14,9 +14,11 @@ from core.models import Artifact, CyberIdentity, IntegrationAccount, TaskExecuti
 from core.schemas.agent_tools import PublishExternalResourceArgs
 from core.schemas.job_assignment import JobAssignmentAction
 from core.services.instagram_service import (
+    INSTAGRAM_CAROUSEL_MAX_ITEMS,
     get_access_token,
     get_ig_user_id,
     graph_base_for_account,
+    instagram_publish_carousel_post,
     instagram_publish_image_post,
 )
 
@@ -88,19 +90,26 @@ def _publish_instagram_post(
     attachments: list,
 ) -> tuple[str, str, dict[str, Any], list[dict[str, Any]]]:
     image_inputs = [att for att in attachments if att.type == "image"]
-    if len(image_inputs) != 1:
-        raise ValueError("instagram.post requires exactly one image attachment.")
-    image_input = image_inputs[0]
-    image = artifacts_by_id.get(image_input.artifact_id)
-    if image is None:
-        raise ValueError("Image attachment artifact was not found.")
-    if image.kind != Artifact.Kind.IMAGE:
-        raise ValueError("instagram.post requires one image artifact attachment.")
-    if image.media is None:
-        raise ValueError("instagram.post image artifact has no media file.")
-    image_url = image.media.resolve_public_url()
-    if not image_url or not image_url.startswith(("http://", "https://")):
-        raise ValueError("instagram.post requires an image artifact with a public HTTP(S) URL.")
+    if not 1 <= len(image_inputs) <= INSTAGRAM_CAROUSEL_MAX_ITEMS:
+        raise ValueError(
+            "instagram.post requires between 1 and "
+            f"{INSTAGRAM_CAROUSEL_MAX_ITEMS} image attachments."
+        )
+    image_urls: list[str] = []
+    for image_input in image_inputs:
+        image = artifacts_by_id.get(image_input.artifact_id)
+        if image is None:
+            raise ValueError("Image attachment artifact was not found.")
+        if image.kind != Artifact.Kind.IMAGE:
+            raise ValueError("instagram.post image attachments must be image artifacts.")
+        if image.media is None:
+            raise ValueError(f"instagram.post image artifact {image.id} has no media file.")
+        image_url = image.media.resolve_public_url()
+        if not image_url or not image_url.startswith(("http://", "https://")):
+            raise ValueError(
+                f"instagram.post image artifact {image.id} has no public HTTP(S) URL."
+            )
+        image_urls.append(image_url)
 
     if not caption.strip():
         for att in attachments:
@@ -119,25 +128,32 @@ def _publish_instagram_post(
     final_caption = caption.strip()
     logger.info(
         "publish_external_resource: publishing instagram.post target_index=%s "
-        "account=%s ig_user_id=%s artifact=%s media=%s mime_type=%s byte_size=%s "
-        "caption_len=%s image_url=%s",
+        "account=%s ig_user_id=%s images=%s caption_len=%s image_urls=%s",
         target.target_index,
         account.id,
         ig_uid,
-        image.id,
-        image.media.id,
-        image.media.mime_type,
-        image.media.byte_size,
+        len(image_urls),
         len(final_caption),
-        image_url,
+        image_urls,
     )
-    response = instagram_publish_image_post(
-        access_token=access,
-        ig_user_id=ig_uid,
-        image_url=image_url,
-        caption=final_caption,
-        graph_base=graph_base_for_account(account),
-    )
+    if len(image_urls) == 1:
+        response = instagram_publish_image_post(
+            access_token=access,
+            ig_user_id=ig_uid,
+            image_url=image_urls[0],
+            caption=final_caption,
+            graph_base=graph_base_for_account(account),
+        )
+        media_type = "image"
+    else:
+        response = instagram_publish_carousel_post(
+            access_token=access,
+            ig_user_id=ig_uid,
+            image_urls=image_urls,
+            caption=final_caption,
+            graph_base=graph_base_for_account(account),
+        )
+        media_type = "carousel"
     published_id = str(response.get("published", {}).get("id") or "").strip()
     if not published_id:
         raise ValueError("Instagram publish returned no media id.")
@@ -152,9 +168,12 @@ def _publish_instagram_post(
         if att.artifact_id in artifacts_by_id
     ]
     provider_response = {
+        "media_type": media_type,
         "container": response["container"],
         "published": response["published"],
     }
+    if "children" in response:
+        provider_response["children"] = response["children"]
     return published_id, final_caption, provider_response, attachment_metadata
 
 
@@ -194,9 +213,12 @@ def make_publish_external_resource_tool(
         name="publish_external_resource",
         description=(
             "Publish a durable external resource and save it as an external_resource artifact. "
-            "For v1 the only resource_type is `instagram.post`. Instagram posts require exactly "
-            "one image artifact with a public HTTP(S) URL. If you generate the image yourself for "
-            "Instagram, prefer `create_image_artifact` with output_format `jpeg`.\n\n"
+            "For v1 the only resource_type is `instagram.post`. Attach 1 image artifact for a "
+            "single-image post, or 2-10 image artifacts for a carousel — the order of the image "
+            "attachments is the slide order shown on Instagram. Every image needs a public "
+            "HTTP(S) URL. If you generate images yourself for Instagram, prefer "
+            "`create_image_artifact` with output_format `jpeg` and the same size for every "
+            "carousel slide (Instagram crops all slides to the first slide's aspect ratio).\n\n"
             f"Publishing targets for this run:\n{lines}"
         ),
         parameters={
@@ -317,6 +339,7 @@ def make_publish_external_resource_tool(
                 "external_resource_id": external_resource_id,
                 "provider": account.provider,
                 "status": "published",
+                "media_type": provider_response.get("media_type", "image"),
                 "caption": final_caption,
                 "attachments": attachment_metadata,
                 "provider_response": provider_response,

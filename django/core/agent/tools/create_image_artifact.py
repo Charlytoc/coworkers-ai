@@ -33,7 +33,9 @@ def make_create_image_artifact_tool(*, task_execution: TaskExecution) -> AgentTo
         description=(
             "Generate one image with OpenAI and save it as a durable media-backed artifact. "
             f"The only image model available is {IMAGE_GENERATION_MODEL}. "
-            "If the image will be published as an Instagram post, use output_format `jpeg`."
+            "If the image will be published as an Instagram post, use output_format `jpeg`. "
+            "For a carousel, call this once per slide with the same `size` and `output_format`, "
+            "and reuse the same style description in every prompt so the slides stay consistent."
         ),
         parameters={
             "type": "object",

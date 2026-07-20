@@ -34,9 +34,11 @@ def make_instagram_insights_tool(
         name="instagram_insights",
         description=(
             "Read the account's Instagram content and analytics. Operations:\n"
-            "- `list_media`: list recent posts (id, caption, media_type, timestamp, permalink).\n"
-            "- `insights`: read metrics for one post (requires `media_id`): reach, likes, comments, "
-            "saved, shares.\n\n"
+            "- `list_media`: list recent posts (id, caption, media_type, timestamp, permalink, "
+            "like_count, comments_count). Use these counts to compare post performance without "
+            "extra calls.\n"
+            "- `insights`: read deeper metrics for one post (requires `media_id`): reach, likes, "
+            "comments, saved, shares.\n\n"
             f"Instagram accounts for this run:\n{lines}"
         ),
         parameters={

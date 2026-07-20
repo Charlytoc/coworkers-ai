@@ -39,9 +39,11 @@ def make_call_artifact_creator_tool(
             "content such as a note, caption, draft, image, post, or future media asset. The child "
             "task starts with text and image artifact tools enabled. If this parent job has Instagram "
             "publishing rights, the child will also receive `publish_external_resource`; use that path "
-            "when the user asks to publish an Instagram post. After calling this, tell the user it may "
-            "take a bit. When the child finishes (success or failure), this job will run again "
-            "automatically so you can notify the user through the appropriate send tool."
+            "when the user asks to publish an Instagram post (single image, or a carousel of 2-10 "
+            "images — for carousels, include the slide count and a per-slide outline in the "
+            "instructions). After calling this, tell the user it may take a bit. When the child "
+            "finishes (success or failure), this job will run again automatically so you can notify "
+            "the user through the appropriate send tool."
         ),
         parameters={
             "type": "object",

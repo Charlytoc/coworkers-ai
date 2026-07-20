@@ -17,7 +17,7 @@ from core.services.instagram_service import (
     graph_base_for_account,
 )
 
-_MEDIA_FIELDS = "id,caption,media_type,timestamp,permalink"
+_MEDIA_FIELDS = "id,caption,media_type,timestamp,permalink,like_count,comments_count"
 _COMMENT_FIELDS = "id,text,timestamp,username"
 
 
