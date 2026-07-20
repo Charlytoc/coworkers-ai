@@ -131,10 +131,37 @@ class Agent:
         return exchange_messages
 
     def _filter_exchange_messages(self, messages: List[Message | FunctionCallOutput | ResponseOutputItem | ResponseOutputMessage]) -> List[ExchangeMessage]:
-        """Filter and convert messages to ExchangeMessages, handling all message types"""
+        """Filter and convert messages to ExchangeMessages, handling all message types.
+
+        Tool calls and their results are kept (as ``tool_call`` / ``tool_result`` entries) so
+        ``AgentSessionLog.outputs`` retains a full, debuggable trace of what the agent did during
+        the run, not just its user-visible text.
+        """
         exchange_messages: List[ExchangeMessage] = []
         for message in messages:
-            if hasattr(message, 'role') and hasattr(message, 'content'):
+            msg_type = getattr(message, "type", None)
+            if msg_type == "function_call":
+                try:
+                    arguments = json.loads(message.arguments)
+                except (TypeError, ValueError):
+                    arguments = message.arguments
+                exchange_messages.append(ExchangeMessage(
+                    role="tool_call",
+                    content={
+                        "call_id": message.call_id,
+                        "name": message.name,
+                        "arguments": arguments,
+                    },
+                ))
+            elif msg_type == "function_call_output":
+                exchange_messages.append(ExchangeMessage(
+                    role="tool_result",
+                    content={
+                        "call_id": message.call_id,
+                        "output": message.output,
+                    },
+                ))
+            elif hasattr(message, 'role') and hasattr(message, 'content'):
                 if message.role == "user" and message.content and len(message.content) > 0:
                     exchange_messages.append(ExchangeMessage(
                         role="user",
